@@ -1,61 +1,119 @@
-use std::{collections::HashMap, io::Result};
+use std::{collections::HashMap, io::Result, mem::size_of};
 
+/// A simple socket trait providing basic read/write operations.
 pub trait SimpleSock {
+    /// Opens the socket connection.
     fn open(&self) -> Result<()> {
         Ok(())
     }
+
+    /// Closes the socket connection.
     fn close(&self) {}
+
+    /// Reads data into the provided buffer, up to `sz` bytes.
     fn read(&self, data: &mut [u8], sz: usize) -> Result<usize>;
+
+    /// Writes data from the provided buffer, up to `sz` bytes.
     fn write(&self, data: &[u8], sz: usize) -> Result<()>;
 }
 
-pub trait Socket {
-    fn get_simple_sock(&self) -> &dyn SimpleSock;
-    fn set_simple_sock(&mut self, simple_sock: Box<dyn SimpleSock>);
-    fn create_sock(&self, params: HashMap<String, String>) -> Result<Box<dyn SimpleSock>>;
-    fn generic_read<T: Default + Clone>(&self, sz: usize) -> Result<Vec<T>> {
-        let mut raw_data = vec![0_u8; size_of::<T>() * sz];
-        let mut count = 0_usize;
+pub trait SockBlockCtl {
+    fn set_block(&self, is_block: bool) -> Result<()>;
+}
 
-        while count < raw_data.len() {
-            let bytes_read = self
-                .get_simple_sock()
-                .read(raw_data[count..].as_mut(), size_of::<T>() * sz - count)?;
-            if bytes_read == 0 {
+pub trait SimpleSockBlock: SimpleSock + SockBlockCtl {}
+
+// Any type that impl SimpleSock & SockBlockCtl automatically
+// implements SimpleSockBlock
+impl<T: SimpleSock + SockBlockCtl> SimpleSockBlock for T {}
+
+pub trait SocketFactory {
+    /// Creates a new SimpleSock instance with the given parameters.
+    fn create_sock(&self, params: HashMap<String, String>) -> Result<Box<dyn SimpleSockBlock>>;
+    fn create_sock_blockctl(&self, params: HashMap<String, String>, is_blocking: bool) -> Result<Box<dyn SimpleSockBlock>> {
+        let soc = self.create_sock(params)?;
+        soc.set_block(is_blocking)?;
+        Ok(soc)
+    }
+}
+
+pub struct SocketWrapper {
+    simple_sock: Box<dyn SimpleSock>,
+}
+
+impl SocketWrapper {
+    pub fn new(simple_sock: Box<dyn SimpleSock>) -> Self {
+        Self {
+            simple_sock
+        }
+    }
+    pub fn get_simple_sock(&self) -> &dyn SimpleSock {
+        &*self.simple_sock
+    }
+    /// Reads a vector of generic type T of size `sz`.
+    pub fn generic_read<T>(&self, sz: usize) -> Result<Vec<T>> {
+        let bytes_needed = size_of::<T>() * sz;
+        let mut buffer = vec![0u8; bytes_needed];
+        let mut bytes_read = 0;
+
+        while bytes_read < bytes_needed {
+            let chunk = self.get_simple_sock().read(
+                &mut buffer[bytes_read..],
+                bytes_needed - bytes_read,
+            )?;
+            if chunk == 0 {
                 break;
             }
-            count += bytes_read;
+            bytes_read += chunk;
         }
 
-        let mut user_data: Vec<T> = vec![T::default(); sz];
+        // Convert bytes to Vec<T> safely
+        let num_elements = bytes_read / size_of::<T>();
+        let mut result = Vec::with_capacity(num_elements);
 
-        unsafe {
-            (user_data.as_mut_ptr() as *mut u8).copy_from(raw_data.as_ptr(), count);
+        for i in 0..num_elements {
+            let start = i * size_of::<T>();
+            let end = start + size_of::<T>();
+            let bytes = &buffer[start..end];
+
+            // Use unsafe only for the necessary conversion
+            let value = unsafe { std::ptr::read(bytes.as_ptr() as *const T) };
+            result.push(value);
         }
 
-        Ok(user_data)
+        Ok(result)
     }
-    fn generic_write<T>(&self, data: &[T], sz: usize) -> Result<()> {
-        let mut inner_data = vec![0u8; sz * size_of::<T>()];
+
+    /// Writes a slice of generic type T.
+    pub fn generic_write<T>(&self, data: &[T], sz: usize) -> Result<()> {
+        let bytes_needed = size_of::<T>() * sz;
+        let mut buffer = vec![0u8; bytes_needed];
+
+        // Copy data to buffer safely
         unsafe {
-            inner_data
-                .as_mut_ptr()
-                .copy_from(data.as_ptr() as *const u8, sz * size_of::<T>());
+            std::ptr::copy_nonoverlapping(
+                data.as_ptr() as *const u8,
+                buffer.as_mut_ptr(),
+                bytes_needed,
+            );
         }
-        self.get_simple_sock()
-            .write(inner_data.as_slice(), sz * size_of::<T>())?;
-        Ok(())
+
+        self.get_simple_sock().write(&buffer, bytes_needed)
     }
-    fn read_all<T: Default + Clone>(&self) -> Result<Vec<T>> {
-        const ITER_LEN: usize = std::usize::MAX;
-        let mut user_data = Vec::new();
+
+    /// Reads all available data of type T in chunks.
+    pub fn read_all<T>(&self) -> Result<Vec<T>> {
+        const CHUNK_SIZE: usize = 1024; // Reasonable chunk size
+        let mut result = Vec::new();
+
         loop {
-            let mut iter_data = self.generic_read(ITER_LEN)?;
-            if iter_data.is_empty() {
+            let chunk = self.generic_read::<T>(CHUNK_SIZE)?;
+            if chunk.is_empty() {
                 break;
             }
-            user_data.append(iter_data.as_mut());
+            result.extend(chunk);
         }
-        Ok(user_data)
+
+        Ok(result)
     }
 }
