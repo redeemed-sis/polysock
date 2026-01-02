@@ -1,0 +1,40 @@
+name: Ubuntu Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Срабатывает на теги v1.0.0 и т.д.
+  workflow_dispatch: # Позволяет запускать сборку вручную
+
+permissions:
+  contents: write # КРИТИЧНО: разрешает создавать релиз и загружать файлы
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-24.04 # Используем актуальный образ 2026 года
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y dpkg-dev rustup
+          rustup default stable
+          cargo install cargo-deb
+
+      - name: Build Binary and DEB
+        run: |
+          cargo build --release --locked
+          cargo deb # Создает .deb пакет в target/debian/
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            target/debian/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
