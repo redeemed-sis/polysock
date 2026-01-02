@@ -11,7 +11,7 @@ fn default_ip_local() -> IpAddr {
 }
 
 /// Default local port.
-fn default_port_local() -> u16 {
+fn default_port() -> u16 {
     0
 }
 
@@ -20,13 +20,16 @@ fn default_port_local() -> u16 {
 struct UdpConfig {
     #[serde(default = "default_ip_local")]
     ip_local: IpAddr,
-    ip_dst: IpAddr,
+    ip_dst: Option<IpAddr>,
     #[serde(
-        default = "default_port_local",
+        default = "default_port",
         deserialize_with = "serde_helpers::string_to_u16"
     )]
     port_local: u16,
-    #[serde(deserialize_with = "serde_helpers::string_to_u16")]
+    #[serde(
+        default = "default_port",
+        deserialize_with = "serde_helpers::string_to_u16"
+    )]
     port_dst: u16,
 }
 
@@ -34,6 +37,7 @@ struct UdpConfig {
 struct SimpleUDP {
     _config: UdpConfig, // Prefix with underscore to suppress unused warning
     socket: UdpSocket,
+    dst_addr: Option<String>,
 }
 
 impl SimpleSock for SimpleUDP {
@@ -51,13 +55,19 @@ impl SimpleSock for SimpleUDP {
     }
 
     fn write(&self, data: &[u8], sz: usize) -> io::Result<()> {
-        self.socket.send(&data[..sz])?;
+        if sz > 0 {
+            if let Some(dst_addr) = &self.dst_addr {
+                self.socket.send_to(&data[..sz], dst_addr)?;
+            } else {
+                return Err(io::Error::from(ErrorKind::InvalidFilename));
+            }
+        }
         Ok(())
     }
 }
 
 impl SockBlockCtl for SimpleUDP {
-    fn set_block(&self, is_block: bool) -> io::Result<()> {
+    fn set_block(&mut self, is_block: bool) -> io::Result<()> {
         // Invert the operation
         self.socket.set_nonblocking(!is_block)
     }
@@ -87,14 +97,16 @@ impl SocketFactory for SocketFactoryUDP {
 
         // Bind and connect the socket
         let socket = UdpSocket::bind(format!("{}:{}", udp_config.ip_local, udp_config.port_local))?;
-        socket.connect(format!("{}:{}", udp_config.ip_dst, udp_config.port_dst))?;
-
-        // Set the nonblocking by default
-        socket.set_nonblocking(true)?;
+        let dst_addr = if let Some(ip_dst) = udp_config.ip_dst {
+            Some(format!("{}:{}", ip_dst, udp_config.port_dst))
+        } else {
+            None
+        };
 
         Ok(Box::new(SimpleUDP {
             _config: udp_config,
             socket,
+            dst_addr
         }))
     }
 }
@@ -110,7 +122,7 @@ mod tests {
         let mut receiver_params = HashMap::new();
         let port_sender = "8081";
         let port_receiver = "8080";
-        let snd_data = vec!['H', 'e', 'l', 'l', 'o'];
+        let snd_data = "Hello".as_bytes().to_vec();
 
         sender_params.insert("ip_dst".to_string(), "127.0.0.1".to_string());
         sender_params.insert("port_dst".to_string(), port_receiver.to_string());
