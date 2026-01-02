@@ -37,9 +37,11 @@ struct SimpleTerminal {
 }
 
 fn read_blocking(_: &SimpleTerminal, data: &mut [u8], sz: usize) -> io::Result<usize> {
-    let mut stdout = io::stdout().lock();
-    print!("stdio# ");
-    stdout.flush()?;
+    {
+        let mut stdout = io::stdout().lock();
+        print!("stdio# ");
+        stdout.flush()?;
+    }
     io::stdin().lock().read(data[..sz].as_mut())
 }
 

@@ -37,6 +37,7 @@ struct UdpConfig {
 struct SimpleUDP {
     _config: UdpConfig, // Prefix with underscore to suppress unused warning
     socket: UdpSocket,
+    dst_addr: Option<String>,
 }
 
 impl SimpleSock for SimpleUDP {
@@ -54,7 +55,13 @@ impl SimpleSock for SimpleUDP {
     }
 
     fn write(&self, data: &[u8], sz: usize) -> io::Result<()> {
-        self.socket.send(&data[..sz])?;
+        if sz > 0 {
+            if let Some(dst_addr) = &self.dst_addr {
+                self.socket.send_to(&data[..sz], dst_addr)?;
+            } else {
+                return Err(io::Error::from(ErrorKind::InvalidFilename));
+            }
+        }
         Ok(())
     }
 }
@@ -90,13 +97,16 @@ impl SocketFactory for SocketFactoryUDP {
 
         // Bind and connect the socket
         let socket = UdpSocket::bind(format!("{}:{}", udp_config.ip_local, udp_config.port_local))?;
-        if let Some(ip_dst) = udp_config.ip_dst {
-            socket.connect(format!("{}:{}", ip_dst, udp_config.port_dst))?;
-        }
+        let dst_addr = if let Some(ip_dst) = udp_config.ip_dst {
+            Some(format!("{}:{}", ip_dst, udp_config.port_dst))
+        } else {
+            None
+        };
 
         Ok(Box::new(SimpleUDP {
             _config: udp_config,
             socket,
+            dst_addr
         }))
     }
 }
