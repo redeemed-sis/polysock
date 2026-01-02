@@ -1,11 +1,12 @@
 use crate::modes::oneliner::OnelinerModeParamsBuilder;
 use crate::modes::{
     Command,
-    oneliner::{OnelinerMode, OnelinerModeCommand, OnelinerModeParams},
+    oneliner::{OnelinerMode, OnelinerModeCommand},
 };
 use crate::sock::{SocketFactory, SocketParams};
 use crate::sockets::{terminal::SimpleTerminalFactory, udp::SocketFactoryUDP};
 
+use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use std::collections::HashMap;
@@ -34,10 +35,10 @@ struct OnelinerArgs {
     #[arg(short, long, default_value_t = false)]
     blocking: bool,
     /// The first socket to bind
-    #[arg(short, long)]
+    #[arg(short, long, value_parser = PossibleValuesParser::new(FACTORY_MAP.keys()))]
     from_dev: String,
     /// The second socket to bind
-    #[arg(short, long)]
+    #[arg(short, long, value_parser = PossibleValuesParser::new(FACTORY_MAP.keys()))]
     to_dev: String,
     /// The first socket parameters (JSON format)
     #[arg(long, value_parser = parse_json::<SocketParams>)]
@@ -119,16 +120,13 @@ impl PolySockArgs {
             eprintln!("Socket type {} not found! Exiting...", args.to_dev);
             process::exit(1);
         };
-        let f_params = args.from_params.clone().unwrap_or(HashMap::new());
-        let to_params = args.to_params.clone().unwrap_or(HashMap::new());
+        let f_params = args.from_params.clone().unwrap_or_default();
+        let to_params = args.to_params.clone().unwrap_or_default();
 
         let oneliner_params = OnelinerModeParamsBuilder::default()
             .f_params(f_params)
             .to_params(to_params)
-            .bidir(match args.exchange_mode {
-                ExchangeMode::Bidir => true,
-                _ => false,
-            })
+            .bidir(matches!(args.exchange_mode, ExchangeMode::Bidir))
             .blocking(args.blocking)
             .build()
             .unwrap_or_else(|e| {

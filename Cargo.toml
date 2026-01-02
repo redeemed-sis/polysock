@@ -1,7 +1,10 @@
 [package]
 name = "polysock"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
+license = "MIT"
+description = "Socket management utility"
+authors = ["Ilya Shishov <shish9919@gmail.com>"]
 
 [dependencies]
 clap = { version = "4.5.53", features = ["derive"] }

@@ -126,6 +126,8 @@ impl SocketFactory for SimpleTerminalFactory {
 }
 
 mod tests {
+    #![allow(unused_imports)]
+
     use std::collections::HashMap;
 
     use crate::{sock::SocketFactory, sockets::terminal::SimpleTerminalFactory, sock::SocketWrapper};
