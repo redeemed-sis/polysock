@@ -48,7 +48,7 @@ impl SimpleSock for SimpleUDP {
                 if err.kind() == ErrorKind::WouldBlock {
                     return Ok(0);
                 }
-                return Err(err);
+                Err(err)
             }
             count => count,
         }
@@ -97,21 +97,21 @@ impl SocketFactory for SocketFactoryUDP {
 
         // Bind and connect the socket
         let socket = UdpSocket::bind(format!("{}:{}", udp_config.ip_local, udp_config.port_local))?;
-        let dst_addr = if let Some(ip_dst) = udp_config.ip_dst {
-            Some(format!("{}:{}", ip_dst, udp_config.port_dst))
-        } else {
-            None
-        };
+        let dst_addr = udp_config
+            .ip_dst
+            .map(|ip_dst| format!("{}:{}", ip_dst, udp_config.port_dst));
 
         Ok(Box::new(SimpleUDP {
             _config: udp_config,
             socket,
-            dst_addr
+            dst_addr,
         }))
     }
 }
 
 mod tests {
+    #![allow(unused_imports)]
+
     use super::*;
     use crate::test_helpers::*;
 
@@ -132,13 +132,13 @@ mod tests {
         receiver_params.insert("port_dst".to_string(), port_sender.to_string());
         receiver_params.insert("port_local".to_string(), port_receiver.to_string());
 
-        assert!(
-            if let Err(e) = echo_loopback_test(&factory, sender_params, receiver_params, snd_data) {
-                eprintln!("{e}");
-                false
-            } else {
-                true
-            }
-        )
+        assert!(if let Err(e) =
+            echo_loopback_test(&factory, sender_params, receiver_params, snd_data)
+        {
+            eprintln!("{e}");
+            false
+        } else {
+            true
+        })
     }
 }

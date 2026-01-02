@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use crate::sock::{SocketWrapper, SocketFactory};
 use std::collections::HashMap;
 use std::io;

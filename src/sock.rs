@@ -51,24 +51,28 @@ pub trait SocketFactory {
 }
 
 pub struct SocketManager<'a> {
-    in_factory: &'a Box<dyn SocketFactory>,
-    out_factory: &'a Box<dyn SocketFactory>,
+    in_factory: &'a dyn SocketFactory,
+    out_factory: &'a dyn SocketFactory,
 }
 
+type DoubleThreadRet = (JoinHandle<Result<()>>, JoinHandle<Result<()>>, Arc<AtomicBool>);
+type SingleThreadRet = (JoinHandle<Result<()>>, Arc<AtomicBool>);
+
+#[allow(unused)]
 impl<'a> SocketManager<'a> {
     pub fn new(
-        in_factory: &'a Box<dyn SocketFactory>,
-        out_factory: &'a Box<dyn SocketFactory>,
+        in_factory: &'a dyn SocketFactory,
+        out_factory: &'a dyn SocketFactory,
     ) -> Self {
         Self {
             in_factory,
             out_factory,
         }
     }
-    pub fn set_in_factory(&mut self, in_factory: &'a Box<dyn SocketFactory>) {
+    pub fn set_in_factory(&mut self, in_factory: &'a dyn SocketFactory) {
         self.in_factory = in_factory;
     }
-    pub fn set_out_factory(&mut self, out_factory: &'a Box<dyn SocketFactory>) {
+    pub fn set_out_factory(&mut self, out_factory: &'a dyn SocketFactory) {
         self.out_factory = out_factory;
     }
     pub fn bind_unidirectional(
@@ -76,7 +80,7 @@ impl<'a> SocketManager<'a> {
         in_params: &SocketParams,
         out_params: &SocketParams,
         blocking: bool,
-    ) -> io::Result<(JoinHandle<Result<()>>, Arc<AtomicBool>)> {
+    ) -> io::Result<SingleThreadRet> {
         let input = SocketWrapper::new(
             self.in_factory
                 .create_sock_blockctl(in_params.clone(), blocking)?,
@@ -98,11 +102,7 @@ impl<'a> SocketManager<'a> {
         &self,
         from_params: &SocketParams,
         to_params: &SocketParams,
-    ) -> io::Result<(
-        JoinHandle<Result<()>>,
-        JoinHandle<Result<()>>,
-        Arc<AtomicBool>,
-    )> {
+    ) -> io::Result<DoubleThreadRet> {
         let from = SocketWrapper::new(
             self.in_factory
                 .create_sock_blockctl(from_params.clone(), false)?,

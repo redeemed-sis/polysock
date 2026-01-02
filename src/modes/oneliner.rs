@@ -1,8 +1,6 @@
-use clap::error::ErrorKind;
 use derive_builder::Builder;
 
 use crate::sock::{SocketFactory, SocketManager, SocketParams};
-use std::io::Error;
 use std::process;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -29,6 +27,7 @@ pub struct OnelinerModeParams {
     blocking: bool,
 }
 
+#[allow(unused)]
 impl OnelinerMode {
     pub fn new(
         fdev: Box<dyn SocketFactory>,
@@ -45,7 +44,7 @@ impl OnelinerMode {
         }
     }
     pub fn start(&mut self) -> io::Result<()> {
-        let manager = SocketManager::new(&self.f_factory, &self.to_factory);
+        let manager = SocketManager::new(self.f_factory.as_ref(), self.to_factory.as_ref());
         let params = &self.params;
         if !params.bidir {
             let (h, r) = manager.bind_unidirectional(
@@ -64,22 +63,16 @@ impl OnelinerMode {
         Ok(())
     }
     pub fn wait(&mut self) -> io::Result<()> {
-        let ret = if let Some(handle1) = self.handle1.take() {
+        if let Some(handle1) = self.handle1.take() {
             handle1.join().unwrap_or_else(|_| {eprintln!("Unexpected error while joining thread!"); process::exit(1)})
         } else {
             return Err(io::Error::from(io::ErrorKind::InvalidData));
-        };
-        if let Err(e) = ret {
-            return Err(e)
-        }
-        let ret = if let Some(handle2) = self.handle2.take() {
+        }?;
+        if let Some(handle2) = self.handle2.take() {
             handle2.join().unwrap_or_else(|_| {eprintln!("Unexpected error while joining thread!"); process::exit(1)})
         } else {
             return Ok(());
-        };
-        if let Err(e) = ret {
-            return Err(e)
-        }
+        }?;
 
         Ok(())
     }
