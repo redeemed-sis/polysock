@@ -12,8 +12,7 @@ pkgver() {
 }
 
 build() {
-  # --frozen гарантирует соответствие Cargo.lock
-  cargo build --frozen --release --manifest-path ${srcdir}/../Cargo.toml --target-dir ${srcdir}/../target
+  cargo build --release --manifest-path ${srcdir}/../Cargo.toml --target-dir ${srcdir}/../target
 }
 
 package() {
