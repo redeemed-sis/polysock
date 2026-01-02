@@ -1,0 +1,31 @@
+name: Arch Linux Release
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build-arch:
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm base-devel rustup
+          # В 2026 году для сборки рекомендуется использовать пользователя без прав root
+          useradd -m builder
+          chown -R builder .
+          su builder -c "rustup default stable"
+
+      - name: Build Package
+        run: |
+          # Сборка через makepkg (требует наличия PKGBUILD в репозитории)
+          su builder -c "makepkg -s --noconfirm"
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.pkg.tar.zst"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
