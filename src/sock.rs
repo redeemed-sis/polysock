@@ -1,7 +1,13 @@
-use std::{collections::HashMap, io::Result, mem::size_of};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::JoinHandle;
+use std::time::Duration;
+use std::{collections::HashMap, io::Result, mem::size_of, thread};
+use std::io;
 
 /// A simple socket trait providing basic read/write operations.
-pub trait SimpleSock {
+#[allow(unused)]
+pub trait SimpleSock: Send {
     /// Opens the socket connection.
     fn open(&self) -> Result<()> {
         Ok(())
@@ -18,7 +24,7 @@ pub trait SimpleSock {
 }
 
 pub trait SockBlockCtl {
-    fn set_block(&self, is_block: bool) -> Result<()>;
+    fn set_block(&mut self, _: bool) -> Result<()> {Ok(())}
 }
 
 pub trait SimpleSockBlock: SimpleSock + SockBlockCtl {}
@@ -27,13 +33,50 @@ pub trait SimpleSockBlock: SimpleSock + SockBlockCtl {}
 // implements SimpleSockBlock
 impl<T: SimpleSock + SockBlockCtl> SimpleSockBlock for T {}
 
+pub type SocketParams = HashMap<String, String>;
 pub trait SocketFactory {
     /// Creates a new SimpleSock instance with the given parameters.
-    fn create_sock(&self, params: HashMap<String, String>) -> Result<Box<dyn SimpleSockBlock>>;
-    fn create_sock_blockctl(&self, params: HashMap<String, String>, is_blocking: bool) -> Result<Box<dyn SimpleSockBlock>> {
-        let soc = self.create_sock(params)?;
+    fn create_sock(&self, params: SocketParams) -> Result<Box<dyn SimpleSockBlock>>;
+    fn create_sock_blockctl(&self, params: SocketParams, is_blocking: bool) -> Result<Box<dyn SimpleSockBlock>> {
+        let mut soc = self.create_sock(params)?;
         soc.set_block(is_blocking)?;
         Ok(soc)
+    }
+}
+
+pub struct SocketManager<'a> {
+    in_factory: &'a Box<dyn SocketFactory>,
+    out_factory: &'a Box<dyn SocketFactory>,
+}
+
+impl <'a> SocketManager<'a> {
+    pub fn new(in_factory: &'a Box<dyn SocketFactory>, out_factory: &'a Box<dyn SocketFactory>) -> Self {
+        Self { in_factory, out_factory }
+    }
+    pub fn set_in_factory(&mut self, in_factory: &'a Box<dyn SocketFactory>) {
+        self.in_factory = in_factory;
+    }
+    pub fn set_out_factory(&mut self, out_factory: &'a Box<dyn SocketFactory>) {
+        self.out_factory = out_factory;
+    }
+    pub fn bound_inout(&self, in_params: &SocketParams, out_params: &SocketParams, blocking: bool) -> io::Result<(JoinHandle<Result<()>>, Arc<AtomicBool>)> {
+        let input = SocketWrapper::new(self.in_factory.create_sock_blockctl(in_params.clone(), blocking)?);
+        let output = SocketWrapper::new(self.out_factory.create_sock(out_params.clone())?);
+        let running = Arc::new(AtomicBool::new(true));
+        let r = running.clone();
+
+        let h = thread::spawn(move || -> Result<()> {
+            while r.load(Ordering::Relaxed) {
+                let buf: Vec<u8> = input.read_all()?;
+                output.generic_write(buf.as_slice(), buf.len())?;
+                // Yeld the thread
+                if !blocking {
+                    thread::sleep(Duration::from_micros(1));
+                }
+            }
+            Ok(())
+        });
+        Ok((h, running))
     }
 }
 
@@ -57,14 +100,15 @@ impl SocketWrapper {
         let mut bytes_read = 0;
 
         while bytes_read < bytes_needed {
+            let chunk_iter = bytes_needed - bytes_read;
             let chunk = self.get_simple_sock().read(
                 &mut buffer[bytes_read..],
-                bytes_needed - bytes_read,
+                chunk_iter,
             )?;
-            if chunk == 0 {
+            bytes_read += chunk;
+            if chunk < chunk_iter {
                 break;
             }
-            bytes_read += chunk;
         }
 
         // Convert bytes to Vec<T> safely
@@ -108,7 +152,8 @@ impl SocketWrapper {
 
         loop {
             let chunk = self.generic_read::<T>(CHUNK_SIZE)?;
-            if chunk.is_empty() {
+            if chunk.len() < CHUNK_SIZE {
+                result.extend(chunk);
                 break;
             }
             result.extend(chunk);
