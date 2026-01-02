@@ -6,6 +6,7 @@ use crate::modes::{
 use crate::sock::{SocketFactory, SocketParams};
 use crate::sockets::{terminal::SimpleTerminalFactory, udp::SocketFactoryUDP};
 
+use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand, ValueEnum};
 
 use std::collections::HashMap;
@@ -34,10 +35,10 @@ struct OnelinerArgs {
     #[arg(short, long, default_value_t = false)]
     blocking: bool,
     /// The first socket to bind
-    #[arg(short, long)]
+    #[arg(short, long, value_parser = PossibleValuesParser::new(FACTORY_MAP.keys()))]
     from_dev: String,
     /// The second socket to bind
-    #[arg(short, long)]
+    #[arg(short, long, value_parser = PossibleValuesParser::new(FACTORY_MAP.keys()))]
     to_dev: String,
     /// The first socket parameters (JSON format)
     #[arg(long, value_parser = parse_json::<SocketParams>)]
