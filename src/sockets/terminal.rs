@@ -25,7 +25,7 @@ fn spawn_stdin_channel() -> (Receiver<Vec<u8>>, JoinHandle<io::Result<()>>, Arc<
     (rx, h, running)
 }
 
-struct SimpleTerminalNonblocking {
+pub struct SimpleTerminalNonblocking {
     running: Arc<AtomicBool>,
     handle: Option<JoinHandle<io::Result<()>>>,
     stdin: Receiver<Vec<u8>>,

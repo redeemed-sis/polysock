@@ -17,7 +17,7 @@ fn default_port() -> u16 {
 
 /// Configuration for UDP socket.
 #[derive(Deserialize)]
-struct UdpConfig {
+pub struct UdpConfig {
     #[serde(default = "default_ip_local")]
     ip_local: IpAddr,
     ip_dst: Option<IpAddr>,
