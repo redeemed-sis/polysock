@@ -1,3 +1,6 @@
+pub mod decorators;
+pub use decorators::{TraceInfoDecoratorFactory, TraceRawDecoratorFactory, TraceCanonicalDecoratorFactory};
+
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -26,6 +29,9 @@ pub trait SimpleSock: Send {
 pub trait SockInfo {
     fn get_type_name(&self) -> &str;
     fn get_id(&self) -> u32;
+    fn get_description(&self) -> String {
+        format!("{}{}", self.get_type_name(), self.get_id())
+    }
 }
 
 pub trait SockBlockCtl {
