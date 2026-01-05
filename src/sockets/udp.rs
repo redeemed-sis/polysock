@@ -1,5 +1,5 @@
 use crate::serde_helpers;
-use crate::sock::{SimpleSock, SimpleSockBlock, SockBlockCtl, SocketFactory};
+use crate::sock::{SimpleSock, ComplexSock, SockBlockCtl, SocketFactory, make_simple_sock};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::io::{self, Error, ErrorKind};
@@ -33,12 +33,11 @@ struct UdpConfig {
     port_dst: u16,
 }
 
-/// Simple UDP socket implementation.
-struct SimpleUDP {
-    _config: UdpConfig, // Prefix with underscore to suppress unused warning
+make_simple_sock!(SimpleUDP {
+    _config: UdpConfig,
     socket: UdpSocket,
     dst_addr: Option<String>,
-}
+}, "udp");
 
 impl SimpleSock for SimpleUDP {
     fn read(&self, data: &mut [u8], _sz: usize) -> io::Result<usize> {
@@ -84,7 +83,7 @@ impl SocketFactoryUDP {
 }
 
 impl SocketFactory for SocketFactoryUDP {
-    fn create_sock(&self, params: HashMap<String, String>) -> io::Result<Box<dyn SimpleSockBlock>> {
+    fn create_sock(&self, params: HashMap<String, String>) -> io::Result<Box<dyn ComplexSock>> {
         // Convert params to JSON value
         let json_value = serde_json::to_value(params)
             .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid parameters"))?;
@@ -101,11 +100,7 @@ impl SocketFactory for SocketFactoryUDP {
             .ip_dst
             .map(|ip_dst| format!("{}:{}", ip_dst, udp_config.port_dst));
 
-        Ok(Box::new(SimpleUDP {
-            _config: udp_config,
-            socket,
-            dst_addr,
-        }))
+        Ok(Box::new(SimpleUDP::new(udp_config, socket, dst_addr)))
     }
 }
 

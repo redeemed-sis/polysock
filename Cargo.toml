@@ -10,5 +10,6 @@ authors = ["Ilya Shishov <shish9919@gmail.com>"]
 clap = { version = "4.5.53", features = ["derive"] }
 derive_builder = "0.20.2"
 io-pipe = "0.7.3"
+paste = "1.0.15"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.148"

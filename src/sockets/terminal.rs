@@ -1,4 +1,4 @@
-use crate::sock::{SimpleSock, SimpleSockBlock, SockBlockCtl, SocketFactory};
+use crate::sock::{SimpleSock, ComplexSock, SockBlockCtl, SocketFactory, make_simple_sock};
 use std::io::{self, ErrorKind, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -9,7 +9,7 @@ fn spawn_stdin_channel() -> (Receiver<Vec<u8>>, JoinHandle<io::Result<()>>, Arc<
     let (tx, rx) = mpsc::channel();
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
-    let term = SimpleTerminal {non_block_ctl: None, read: read_blocking};
+    let term = SimpleTerminal::default();
     let h = thread::spawn(move || -> io::Result<()>{
         while r.load(Ordering::Relaxed) {
             const CHUNK_SIZE: usize = 1024;
@@ -31,9 +31,17 @@ struct SimpleTerminalNonblocking {
     stdin: Receiver<Vec<u8>>,
 }
 
-struct SimpleTerminal {
+type SimpleTermReadCb = fn(obj: &SimpleTerminal, data: &mut [u8], sz: usize) -> io::Result<usize>;
+
+make_simple_sock!(SimpleTerminal {
     non_block_ctl: Option<SimpleTerminalNonblocking>,
-    read: fn(obj: &Self, data: &mut [u8], sz: usize) -> io::Result<usize>,
+    read: SimpleTermReadCb,
+}, "stdio");
+
+impl Default for SimpleTerminal {
+    fn default() -> Self {
+        Self::new(None, read_blocking)
+    }
 }
 
 fn read_blocking(_: &SimpleTerminal, data: &mut [u8], sz: usize) -> io::Result<usize> {
@@ -117,11 +125,8 @@ impl SimpleTerminalFactory {
 }
 
 impl SocketFactory for SimpleTerminalFactory {
-    fn create_sock(&self, _: std::collections::HashMap<String, String>) -> io::Result<Box<dyn SimpleSockBlock>> {
-        Ok(Box::new(SimpleTerminal {
-            read: read_blocking,
-            non_block_ctl: None,
-        }))
+    fn create_sock(&self, _: std::collections::HashMap<String, String>) -> io::Result<Box<dyn ComplexSock>> {
+        Ok(Box::new(SimpleTerminal::default()))
     }
 }
 
