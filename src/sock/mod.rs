@@ -1,3 +1,6 @@
+pub mod decorators;
+pub use decorators::{TraceInfoDecoratorFactory, TraceRawDecoratorFactory, TraceCanonicalDecoratorFactory};
+
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -23,27 +26,35 @@ pub trait SimpleSock: Send {
     fn write(&self, data: &[u8], sz: usize) -> Result<()>;
 }
 
+pub trait SockInfo {
+    fn get_type_name(&self) -> &str;
+    fn get_id(&self) -> u32;
+    fn get_description(&self) -> String {
+        format!("{}{}", self.get_type_name(), self.get_id())
+    }
+}
+
 pub trait SockBlockCtl {
     fn set_block(&mut self, _: bool) -> Result<()> {
         Ok(())
     }
 }
 
-pub trait SimpleSockBlock: SimpleSock + SockBlockCtl {}
+pub trait ComplexSock: SimpleSock + SockBlockCtl + SockInfo {}
 
 // Any type that impl SimpleSock & SockBlockCtl automatically
 // implements SimpleSockBlock
-impl<T: SimpleSock + SockBlockCtl> SimpleSockBlock for T {}
+impl<T: SimpleSock + SockBlockCtl + SockInfo> ComplexSock for T {}
 
 pub type SocketParams = HashMap<String, String>;
 pub trait SocketFactory {
     /// Creates a new SimpleSock instance with the given parameters.
-    fn create_sock(&self, params: SocketParams) -> Result<Box<dyn SimpleSockBlock>>;
+    fn create_sock(&self, params: SocketParams) -> Result<Box<dyn ComplexSock>>;
     fn create_sock_blockctl(
         &self,
         params: SocketParams,
         is_blocking: bool,
-    ) -> Result<Box<dyn SimpleSockBlock>> {
+    ) -> Result<Box<dyn ComplexSock>> {
         let mut soc = self.create_sock(params)?;
         soc.set_block(is_blocking)?;
         Ok(soc)
@@ -152,11 +163,11 @@ impl<'a> SocketManager<'a> {
 }
 
 pub struct SocketWrapper {
-    simple_sock: Box<dyn SimpleSock>,
+    simple_sock: Box<dyn ComplexSock>,
 }
 
 impl SocketWrapper {
-    pub fn new(simple_sock: Box<dyn SimpleSock>) -> Self {
+    pub fn new(simple_sock: Box<dyn ComplexSock>) -> Self {
         Self { simple_sock }
     }
     pub fn open(mut self) -> io::Result<Self> {
@@ -243,3 +254,38 @@ impl Drop for SocketWrapper {
         self.close();
     }
 }
+
+macro_rules! make_simple_sock {
+    ($name: ident { $($field:ident : $t:ty),* $(,)? }, $stype: expr) => {
+        paste::paste! {
+            use crate::sock::SockInfo;
+            use std::sync::atomic::AtomicU32 as IdAtomic;
+            use std::sync::atomic::Ordering as IdOrdering;
+            #[allow(non_upper_case_globals)]
+            static [<$name _id>]: IdAtomic = IdAtomic::new(0);
+            pub struct $name {
+                stype: String,
+                id: u32,
+                $($field: $t),*
+            }
+            impl $name {
+                pub fn new($($field: $t),*) -> Self {
+                    Self {
+                        id: [<$name _id>].fetch_add(1, IdOrdering::Relaxed),
+                        stype: $stype.to_string(),
+                        $($field),*
+                    }
+                }
+            }
+            impl SockInfo for $name {
+                fn get_type_name(&self) -> &str {
+                    self.stype.as_str()
+                }
+                fn get_id(&self) -> u32 {
+                    self.id
+                }
+            }
+        }
+    };
+}
+pub(crate) use make_simple_sock;

@@ -3,8 +3,14 @@ use crate::modes::{
     Command,
     oneliner::{OnelinerMode, OnelinerModeCommand},
 };
-use crate::sock::{SocketFactory, SocketParams};
-use crate::sockets::{terminal::SimpleTerminalFactory, udp::SocketFactoryUDP};
+use crate::sock::{
+    SocketFactory, SocketParams, TraceCanonicalDecoratorFactory, TraceInfoDecoratorFactory,
+    TraceRawDecoratorFactory,
+};
+use crate::sockets::{
+    tcp_client::TcpClientFactory, tcp_server::TcpServerFactory, terminal::SimpleTerminalFactory,
+    udp::SocketFactoryUDP,
+};
 
 use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand, ValueEnum};
@@ -46,6 +52,21 @@ struct OnelinerArgs {
     /// The second socket parameters (JSON format)
     #[arg(long, value_parser = parse_json::<SocketParams>)]
     to_params: Option<SocketParams>,
+    /// Socket info tracing
+    #[arg(long, default_value_t = false)]
+    trace_info: bool,
+    /// Socket data tracing (in raw format)
+    #[arg(long, default_value_t = false)]
+    trace_raw: bool,
+    /// Socket data tracing (in canonical format)
+    #[arg(long, default_value_t = false)]
+    trace_canon: bool,
+    /// From device tracing off
+    #[arg(long, default_value_t = false)]
+    trace_from_off: bool,
+    /// To device tracing off
+    #[arg(long, default_value_t = false)]
+    trace_to_off: bool,
 }
 
 #[derive(Subcommand)]
@@ -80,27 +101,29 @@ static FACTORY_MAP: LazyLock<HashMap<&'static str, FactoryCallback>> = LazyLock:
         "stdio",
         factory_callback_create!(SimpleTerminalFactory::new()),
     );
+    m.insert(
+        "tcp-client",
+        factory_callback_create!(TcpClientFactory::new()),
+    );
+    m.insert("tcp-server", factory_callback_create!(TcpServerFactory::new()));
     m
 });
 
 impl PolySockArgs {
     pub fn get_scenario() -> Box<dyn Command> {
         let args = Self::parse();
-        let command =
-            match &args
-                .command
-                .unwrap_or_else( || {
-                    eprintln!("Default command line parameters or subcommands are not provided!");
-                    process::exit(1)
-                }) {
-                Commands::Oneliner(args) => Self::get_oneliner_command(args),
-                Commands::Repl {} => {
-                    panic!("Repl mode is not implemented yet!");
-                }
-                Commands::Script {} => {
-                    panic!("Script mode is not implemented yet!");
-                }
-            };
+        let command = match &args.command.unwrap_or_else(|| {
+            eprintln!("Default command line parameters or subcommands are not provided!");
+            process::exit(1)
+        }) {
+            Commands::Oneliner(args) => Self::get_oneliner_command(args),
+            Commands::Repl {} => {
+                panic!("Repl mode is not implemented yet!");
+            }
+            Commands::Script {} => {
+                panic!("Script mode is not implemented yet!");
+            }
+        };
 
         command.unwrap_or_else(|| {
             eprintln!("Command parsing failed!");
@@ -108,18 +131,44 @@ impl PolySockArgs {
         })
     }
     fn get_oneliner_command(args: &OnelinerArgs) -> Option<Box<dyn Command>> {
-        let f_factory = if let Some(cb) = FACTORY_MAP.get(args.from_dev.as_str()) {
+        let set_decorators =
+            |mut f: Box<dyn SocketFactory>, args: &OnelinerArgs| -> Box<dyn SocketFactory> {
+                // Socket info must be printed firstly
+                if args.trace_info {
+                    f = TraceInfoDecoratorFactory::new(f);
+                }
+                // Raw data should be printed after socket info
+                if args.trace_raw {
+                    f = TraceRawDecoratorFactory::new(f);
+                }
+                // Canonical data is the last
+                if args.trace_canon {
+                    f = TraceCanonicalDecoratorFactory::new(f);
+                }
+                f
+            };
+        let mut f_factory = if let Some(cb) = FACTORY_MAP.get(args.from_dev.as_str()) {
             cb()
         } else {
             eprintln!("Socket type {} not found! Exiting...", args.from_dev);
             process::exit(1);
         };
-        let t_factory = if let Some(cb) = FACTORY_MAP.get(args.to_dev.as_str()) {
+        let mut t_factory = if let Some(cb) = FACTORY_MAP.get(args.to_dev.as_str()) {
             cb()
         } else {
             eprintln!("Socket type {} not found! Exiting...", args.to_dev);
             process::exit(1);
         };
+
+        // Set decorators, if it is not disabled for
+        // this direction
+        if !args.trace_from_off {
+            f_factory = set_decorators(f_factory, args);
+        }
+        if !args.trace_to_off {
+            t_factory = set_decorators(t_factory, args);
+        }
+
         let f_params = args.from_params.clone().unwrap_or_default();
         let to_params = args.to_params.clone().unwrap_or_default();
 

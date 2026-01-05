@@ -1,0 +1,30 @@
+name: Windows Release
+on:
+  push:
+    tags: ['v*']
+
+env:
+  APP_NAME: polysock
+
+jobs:
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Build
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Package
+        run: |
+          cd target/x86_64-pc-windows-msvc/release
+          7z a ../../../${{ env.APP_NAME }}-windows.zip ${{ env.APP_NAME }}.exe
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.APP_NAME }}-windows.zip
