@@ -5,29 +5,19 @@ use std::collections::HashMap;
 use std::io::{self, Error, ErrorKind};
 use std::net::{IpAddr, UdpSocket};
 
-/// Default local IP address.
-fn default_ip_local() -> IpAddr {
-    "0.0.0.0".parse().unwrap()
-}
-
-/// Default local port.
-fn default_port() -> u16 {
-    0
-}
-
 /// Configuration for UDP socket.
 #[derive(Deserialize)]
 pub struct UdpConfig {
-    #[serde(default = "default_ip_local")]
+    #[serde(default = "serde_helpers::default_ip_local")]
     ip_local: IpAddr,
     ip_dst: Option<IpAddr>,
     #[serde(
-        default = "default_port",
+        default = "serde_helpers::default_port",
         deserialize_with = "serde_helpers::string_to_u16"
     )]
     port_local: u16,
     #[serde(
-        default = "default_port",
+        default = "serde_helpers::default_port",
         deserialize_with = "serde_helpers::string_to_u16"
     )]
     port_dst: u16,

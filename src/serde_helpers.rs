@@ -1,6 +1,17 @@
 use serde::{Deserialize, Deserializer, de};
 use std::result;
 use std::str::FromStr;
+use std::net::IpAddr;
+
+/// Default local IP address.
+pub fn default_ip_local() -> IpAddr {
+    "0.0.0.0".parse().unwrap()
+}
+
+/// Default local port.
+pub fn default_port() -> u16 {
+    0
+}
 
 pub fn string_to_u16<'de, D>(deserializer: D) -> result::Result<u16, D::Error>
 where

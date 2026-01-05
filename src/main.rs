@@ -16,6 +16,7 @@ mod modes;
 use crate::args::PolySockArgs;
 
 fn main() -> io::Result<()> {
+    env_logger::init();
     let mut command = PolySockArgs::get_scenario();
     command.execute();
     Ok(())

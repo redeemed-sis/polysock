@@ -7,7 +7,10 @@ use crate::sock::{
     SocketFactory, SocketParams, TraceCanonicalDecoratorFactory, TraceInfoDecoratorFactory,
     TraceRawDecoratorFactory,
 };
-use crate::sockets::{terminal::SimpleTerminalFactory, udp::SocketFactoryUDP};
+use crate::sockets::{
+    tcp_client::TcpClientFactory, tcp_server::TcpServerFactory, terminal::SimpleTerminalFactory,
+    udp::SocketFactoryUDP,
+};
 
 use clap::builder::PossibleValuesParser;
 use clap::{Parser, Subcommand, ValueEnum};
@@ -98,6 +101,11 @@ static FACTORY_MAP: LazyLock<HashMap<&'static str, FactoryCallback>> = LazyLock:
         "stdio",
         factory_callback_create!(SimpleTerminalFactory::new()),
     );
+    m.insert(
+        "tcp-client",
+        factory_callback_create!(TcpClientFactory::new()),
+    );
+    m.insert("tcp-server", factory_callback_create!(TcpServerFactory::new()));
     m
 });
 
