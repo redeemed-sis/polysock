@@ -34,7 +34,17 @@ make_simple_sock!(TcpServer {
     blocking: Arc<AtomicBool>,
     is_running: Arc<AtomicBool>,
     handle: Option<ListenerHandle>,
-}, "tcp-server");
+}, "tcp-server", self, {
+    let mut descr = format!("{}{}", self.get_type_name(), self.get_id());
+    let clients = self.clients.lock().unwrap();
+    if !clients.is_empty() {
+        descr.push_str(", connected clients:");
+        for (_, addr) in clients.iter() {
+            descr.push_str(format!("\nClient {addr}").as_str());
+        }
+    }
+    descr
+});
 
 impl SimpleSock for TcpServer {
     fn open(&mut self) -> io::Result<()> {
@@ -51,21 +61,21 @@ impl SimpleSock for TcpServer {
                 let cli = if let Ok(cli) = listener.accept() {
                     cli
                 } else {
+                    // Check acception every 10 ms, it is
+                    // bad solution, but it is the easyiest way
+                    thread::sleep(Duration::from_millis(10));
                     continue;
                 };
                 cli.0.set_nonblocking(!b.load(Ordering::Relaxed))?;
                 // Pass new connection to client list
                 clients.lock().unwrap().push_back(cli);
-                // Check acception every 10 ms, it is
-                // bad solution, but it is the easyiest way
-                thread::sleep(Duration::from_millis(10));
             }
             Ok(())
         }));
-        if self.handle.as_ref().unwrap().is_finished() {
-            if let Err(e) = self.handle.take().unwrap().join().unwrap() {
-                return Err(e);
-            }
+        if self.handle.as_ref().unwrap().is_finished()
+            && let Err(e) = self.handle.take().unwrap().join().unwrap()
+        {
+            return Err(e);
         }
         Ok(())
     }
@@ -118,7 +128,7 @@ impl SimpleSock for TcpServer {
         let mut clients = self.clients.lock().unwrap();
 
         for (cli, addr) in clients.iter_mut() {
-            if let Ok(_) = cli.write_all(data[..sz].as_ref()) {
+            if cli.write_all(data[..sz].as_ref()).is_ok() {
                 log::trace!("Data sent to {}", addr);
             }
         }

@@ -1,6 +1,6 @@
-use super::{ComplexSock, SockBlockCtl, SockInfo, SocketParams, SocketFactory, SimpleSock};
-use std::io::Result;
+use super::{ComplexSock, SimpleSock, SockBlockCtl, SockInfo, SocketFactory, SocketParams};
 use pretty_hex::{self, PrettyHex};
+use std::io::Result;
 
 macro_rules! socket_decorator {
     ($name: ident) => {
@@ -8,6 +8,7 @@ macro_rules! socket_decorator {
             sock: Box<dyn ComplexSock>,
         }
         impl $name {
+            #[allow(clippy::new_ret_no_self)]
             pub fn new(sock: Box<dyn ComplexSock>) -> Box<dyn ComplexSock> {
                 Box::new(Self { sock })
             }
@@ -33,6 +34,7 @@ macro_rules! socket_decorator {
                 factory: Box<dyn SocketFactory>,
             }
             impl [< $name Factory >] {
+                #[allow(clippy::new_ret_no_self)]
                 pub fn new(factory: Box<dyn SocketFactory>) -> Box<dyn SocketFactory> {
                     Box::new(Self { factory })
                 }
@@ -67,10 +69,10 @@ impl SimpleSock for TraceInfoDecorator {
     fn read(&self, data: &mut [u8], sz: usize) -> Result<usize> {
         let sock = self.sock.as_ref();
         let res = sock.read(data, sz);
-        if let Ok(sz) = res {
-            if sz > 0 {
-                println!("Data is received from: {}", sock.get_description());
-            }
+        if let Ok(sz) = res
+            && sz > 0
+        {
+            println!("Data is received from: {}", sock.get_description());
         }
         res
     }
@@ -99,10 +101,10 @@ socket_decorator!(TraceRawDecorator);
 impl SimpleSock for TraceRawDecorator {
     fn read(&self, data: &mut [u8], sz: usize) -> Result<usize> {
         let res = self.sock.read(data, sz);
-        if let Ok(sz) = res {
-            if sz > 0 {
-                println!("Data is received: {:?}", data[..sz].as_ref());
-            }
+        if let Ok(sz) = res
+            && sz > 0
+        {
+            println!("Data is received: {:?}", data[..sz].as_ref());
         }
         res
     }
@@ -122,10 +124,13 @@ socket_decorator!(TraceCanonicalDecorator);
 impl SimpleSock for TraceCanonicalDecorator {
     fn read(&self, data: &mut [u8], sz: usize) -> Result<usize> {
         let res = self.sock.read(data, sz);
-        if let Ok(sz) = res {
-            if sz > 0 {
-                println!("Received data (canonical format):\n {:?}", data[..sz].hex_dump());
-            }
+        if let Ok(sz) = res
+            && sz > 0
+        {
+            println!(
+                "Received data (canonical format):\n {:?}",
+                data[..sz].hex_dump()
+            );
         }
         res
     }
@@ -133,7 +138,10 @@ impl SimpleSock for TraceCanonicalDecorator {
         let sock = self.sock.as_ref();
         let res = sock.write(data, sz);
         if sz > 0 {
-            println!("Written data (canonical format):\n{:?}", data[..sz].hex_dump());
+            println!(
+                "Written data (canonical format):\n{:?}",
+                data[..sz].hex_dump()
+            );
         }
         res
     }

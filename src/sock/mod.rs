@@ -1,5 +1,7 @@
 pub mod decorators;
-pub use decorators::{TraceInfoDecoratorFactory, TraceRawDecoratorFactory, TraceCanonicalDecoratorFactory};
+pub use decorators::{
+    TraceCanonicalDecoratorFactory, TraceInfoDecoratorFactory, TraceRawDecoratorFactory,
+};
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -66,15 +68,16 @@ pub struct SocketManager<'a> {
     out_factory: &'a dyn SocketFactory,
 }
 
-type DoubleThreadRet = (JoinHandle<Result<()>>, JoinHandle<Result<()>>, Arc<AtomicBool>);
+type DoubleThreadRet = (
+    JoinHandle<Result<()>>,
+    JoinHandle<Result<()>>,
+    Arc<AtomicBool>,
+);
 type SingleThreadRet = (JoinHandle<Result<()>>, Arc<AtomicBool>);
 
 #[allow(unused)]
 impl<'a> SocketManager<'a> {
-    pub fn new(
-        in_factory: &'a dyn SocketFactory,
-        out_factory: &'a dyn SocketFactory,
-    ) -> Self {
+    pub fn new(in_factory: &'a dyn SocketFactory, out_factory: &'a dyn SocketFactory) -> Self {
         Self {
             in_factory,
             out_factory,
@@ -135,11 +138,7 @@ impl<'a> SocketManager<'a> {
         let handle_1_2 = Self::create_binding_thread(from_1_2, to_1_2, r_1_2);
         let handle_2_1 = Self::create_binding_thread(from_2_1, to_2_1, r_2_1);
 
-        Ok((
-            handle_1_2,
-            handle_2_1,
-            running
-        ))
+        Ok((handle_1_2, handle_2_1, running))
     }
     fn create_binding_thread(
         from: Arc<Mutex<SocketWrapper>>,
@@ -256,7 +255,7 @@ impl Drop for SocketWrapper {
 }
 
 macro_rules! make_simple_sock {
-    ($name: ident { $($field:ident : $t:ty),* $(,)? }, $stype: expr) => {
+    ($name: ident { $($field:ident : $t:ty),* $(,)? }, $stype: expr $(, $self_ident: ident, $sock_descr: block)?) => {
         paste::paste! {
             use crate::sock::SockInfo;
             use std::sync::atomic::AtomicU32 as IdAtomic;
@@ -284,6 +283,11 @@ macro_rules! make_simple_sock {
                 fn get_id(&self) -> u32 {
                     self.id
                 }
+                $(
+                    fn get_description(&$self_ident) -> String {
+                        $sock_descr
+                    }
+                )?
             }
         }
     };
