@@ -17,4 +17,5 @@ build() {
 
 package() {
   install -Dm755 "${srcdir}/../target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+  install -Dm644 "${srcdir}/../scripts/$pkgname" "$pkgdir/usr/share/bash-completion/completions/$pkgname"
 }
