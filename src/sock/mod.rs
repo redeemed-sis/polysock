@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
-use std::{collections::HashMap, io::Result, mem::size_of, thread};
+use std::{io::Result, mem::size_of, thread};
 
 /// A simple socket trait providing basic read/write operations.
 #[allow(unused)]
