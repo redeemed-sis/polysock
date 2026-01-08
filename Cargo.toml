@@ -6,6 +6,13 @@ license = "MIT"
 description = "Socket management utility"
 authors = ["Ilya Shishov <shish9919@gmail.com>"]
 
+[package.metadata.deb]
+assets = [
+    # Source, Destination, Permissions
+    ["scripts/polysock", "/usr/share/bash-completion/completions/", "644"],
+    ["target/release/polysock", "/usr/bin/", "755"],
+]
+
 [dependencies]
 clap = { version = "4.5.53", features = ["derive"] }
 derive_builder = "0.20.2"
