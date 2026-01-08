@@ -3,7 +3,8 @@ FROM ubuntu:latest
 
 # Update the package index and install the desired package(s)
 RUN apt-get update && apt-get install -y rustup \
-    dpkg-dev
+    dpkg-dev \
+    bash-completion
 
 ARG USER_NAME="ubuntu"
 
