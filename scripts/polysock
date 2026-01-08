@@ -1,0 +1,31 @@
+# bash completion for polysock
+
+_polysock() {
+    local i=1 cmd cur
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    
+    # Find the actual subcommand by skipping global flags
+    while [[ "$i" -lt "$COMP_CWORD" ]]; do
+        local s="${COMP_WORDS[i]}"
+        case "$s" in
+            -*) ;; # Skip flags
+            *) cmd="$s"; break ;;
+        esac
+        (( i++ ))
+    done
+
+    if [[ "$i" -eq "$COMP_CWORD" ]]; then
+        # If we haven't found a subcommand yet, suggest them
+        COMPREPLY=( $(compgen -W "oneliner script repl help -h --help" -- "$cur") )
+    else
+        # Suggest based on the found subcommand
+        case "$cmd" in
+            oneliner) COMPREPLY=( $(compgen -W "-e --exchange-mode -b --blocking \
+                                            -f --from-dev -t --to-dev --from-params \
+                                            --to-params --trace-info --trace-raw --trace-canon \
+                                            --trace-from-off --trace-to-off -h --help" -- "$cur") ) ;;
+        esac
+    fi
+}
+
+complete -F _polysock polysock
