@@ -48,7 +48,7 @@ pub trait ComplexSock: SimpleSock + SockBlockCtl + SockInfo {}
 // implements SimpleSockBlock
 impl<T: SimpleSock + SockBlockCtl + SockInfo> ComplexSock for T {}
 
-pub type SocketParams = HashMap<String, String>;
+pub type SocketParams = String;
 pub trait SocketFactory {
     /// Creates a new SimpleSock instance with the given parameters.
     fn create_sock(&self, params: SocketParams) -> Result<Box<dyn ComplexSock>>;

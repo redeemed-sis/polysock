@@ -47,7 +47,7 @@ struct OnelinerArgs {
     #[arg(short, long, value_parser = PossibleValuesParser::new(FACTORY_MAP.keys()))]
     to_dev: String,
     /// The first socket parameters (JSON format)
-    #[arg(long, value_parser = parse_json::<SocketParams>)]
+    #[arg(long)]
     from_params: Option<SocketParams>,
     /// The second socket parameters (JSON format)
     #[arg(long, value_parser = parse_json::<SocketParams>)]

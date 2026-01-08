@@ -1,14 +1,14 @@
 #![allow(unused)]
 
-use crate::sock::{SocketWrapper, SocketFactory};
+use crate::sock::{SocketFactory, SocketParams, SocketWrapper};
 use std::collections::HashMap;
 use std::io;
 use std::{time::Duration, fmt::Debug};
 
 pub fn echo_loopback_test<T: Debug + PartialEq>(
     factory: &dyn SocketFactory,
-    sender_params: HashMap<String, String>,
-    receiver_params: HashMap<String, String>,
+    sender_params: SocketParams,
+    receiver_params: SocketParams,
     snd_data: Vec<T>,
 ) -> io::Result<()> {
     let receiver =

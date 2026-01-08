@@ -1,7 +1,6 @@
 use crate::serde_helpers;
-use crate::sock::{SimpleSock, ComplexSock, SockBlockCtl, SocketFactory, make_simple_sock};
+use crate::sock::{ComplexSock, SimpleSock, SockBlockCtl, SocketFactory, SocketParams, make_simple_sock};
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::io::{self, Error, ErrorKind};
 use std::net::{IpAddr, UdpSocket};
 
@@ -13,12 +12,10 @@ pub struct UdpConfig {
     ip_dst: Option<IpAddr>,
     #[serde(
         default = "serde_helpers::default_port",
-        deserialize_with = "serde_helpers::string_to_u16"
     )]
     port_local: u16,
     #[serde(
         default = "serde_helpers::default_port",
-        deserialize_with = "serde_helpers::string_to_u16"
     )]
     port_dst: u16,
 }
@@ -73,13 +70,9 @@ impl SocketFactoryUDP {
 }
 
 impl SocketFactory for SocketFactoryUDP {
-    fn create_sock(&self, params: HashMap<String, String>) -> io::Result<Box<dyn ComplexSock>> {
-        // Convert params to JSON value
-        let json_value = serde_json::to_value(params)
-            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid parameters"))?;
-
+    fn create_sock(&self, params: SocketParams) -> io::Result<Box<dyn ComplexSock>> {
         // Deserialize to UdpConfig
-        let udp_config: UdpConfig = serde_json::from_value(json_value).map_err(|e| {
+        let udp_config: UdpConfig = serde_json::from_str(params.as_str()).map_err(|e| {
             eprintln!("{e}");
             Error::new(ErrorKind::InvalidInput, "Invalid UDP configuration")
         })?;
@@ -103,19 +96,11 @@ mod tests {
     #[test]
     fn test_udp_socket_echo_loopback() {
         let factory = SocketFactoryUDP::new();
-        let mut sender_params = HashMap::new();
-        let mut receiver_params = HashMap::new();
-        let port_sender = "8081";
-        let port_receiver = "8080";
+        let sender_params =
+            "{ \"ip_dst\": \"127.0.0.1\", \"port_dst\": 8080, \"port_local\": 8081}".to_string();
+        let receiver_params = 
+            "{ \"ip_dst\": \"127.0.0.1\", \"port_dst\": 8081, \"port_local\": 8080}".to_string();
         let snd_data = "Hello".as_bytes().to_vec();
-
-        sender_params.insert("ip_dst".to_string(), "127.0.0.1".to_string());
-        sender_params.insert("port_dst".to_string(), port_receiver.to_string());
-        sender_params.insert("port_local".to_string(), port_sender.to_string());
-
-        receiver_params.insert("ip_dst".to_string(), "127.0.0.1".to_string());
-        receiver_params.insert("port_dst".to_string(), port_sender.to_string());
-        receiver_params.insert("port_local".to_string(), port_receiver.to_string());
 
         assert!(if let Err(e) =
             echo_loopback_test(&factory, sender_params, receiver_params, snd_data)
