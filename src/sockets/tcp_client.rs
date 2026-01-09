@@ -83,7 +83,7 @@ impl SocketFactory for TcpClientFactory {
         // Deserialize to TcpClientConfig
         let tcp_config: TcpClientConfig = serde_json::from_str(params.as_str()).map_err(|e| {
             eprintln!("{e}");
-            Error::new(ErrorKind::InvalidInput, "Invalid UDP configuration")
+            Error::new(ErrorKind::InvalidInput, "Invalid TCP configuration")
         })?;
 
         // Blocking by default

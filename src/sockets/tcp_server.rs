@@ -152,10 +152,10 @@ impl TcpServerFactory {
 
 impl SocketFactory for TcpServerFactory {
     fn create_sock(&self, params: SocketParams) -> io::Result<Box<dyn ComplexSock>> {
-        // Deserialize to TcpClientConfig
+        // Deserialize to TcpServerConfig
         let tcp_config: TcpServerConfig = serde_json::from_str(params.as_str()).map_err(|e| {
             eprintln!("{e}");
-            Error::new(ErrorKind::InvalidInput, "Invalid UDP configuration")
+            Error::new(ErrorKind::InvalidInput, "Invalid TCP configuration")
         })?;
 
         // Blocking by default
