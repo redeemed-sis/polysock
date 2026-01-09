@@ -40,7 +40,7 @@ pub enum TestGenTypes {
     },
 }
 
-struct TestGenPrivate {
+pub struct TestGenPrivate {
     pos: usize,
     last_data: u8,
 }
@@ -255,7 +255,7 @@ pub struct TestGenConfig {
     cycle: u64,
 }
 
-trait TestPatternStrategy {
+pub trait TestPatternStrategy {
     fn read(
         &self,
         cfg: &(dyn Any + Send),
