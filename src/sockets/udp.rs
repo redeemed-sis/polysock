@@ -1,22 +1,27 @@
 use crate::serde_helpers;
-use crate::sock::{ComplexSock, SimpleSock, SockBlockCtl, SocketFactory, SocketParams, make_simple_sock};
+use crate::sock::{ComplexSock, SimpleSock, SockBlockCtl, SocketFactory, SocketParams, make_simple_sock, SockDocViewer};
 use serde::Deserialize;
 use std::io::{self, Error, ErrorKind};
 use std::net::{IpAddr, UdpSocket};
+use schemars::JsonSchema;
 
 /// Configuration for UDP socket.
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 pub struct UdpConfig {
+    /// Local IP address to bind socket
     #[serde(default = "serde_helpers::default_ip_local")]
     ip_local: IpAddr,
+    /// IP address of destination host
     ip_dst: Option<IpAddr>,
     #[serde(
         default = "serde_helpers::default_port",
     )]
+    /// Local port to bind socket
     port_local: u16,
     #[serde(
         default = "serde_helpers::default_port",
     )]
+    /// Port of the desired host
     port_dst: u16,
 }
 
@@ -69,6 +74,23 @@ impl SocketFactoryUDP {
     }
 }
 
+struct UdpDoc;
+impl SockDocViewer for UdpDoc {
+    fn get_full_scheme(&self) -> String {
+        let schema = schemars::schema_for!(UdpConfig);
+        serde_json::to_string_pretty(&schema).unwrap()
+    }
+    fn get_examples(&self) -> String {
+        let example_dst = "{ \"ip_dst\": \"127.0.0.1\", \"port_dst\": 1234 }";
+        let example_src = "{ \"port_local\": 1234 }";
+        format!(
+            "{}: {}\n{}: {}",
+            "Transmitter configuration", example_dst,
+            "Receiver configuration", example_src
+        )
+    }
+}
+
 impl SocketFactory for SocketFactoryUDP {
     fn create_sock(&self, params: SocketParams) -> io::Result<Box<dyn ComplexSock>> {
         // Deserialize to UdpConfig
@@ -84,6 +106,9 @@ impl SocketFactory for SocketFactoryUDP {
             .map(|ip_dst| format!("{}:{}", ip_dst, udp_config.port_dst));
 
         Ok(Box::new(SimpleUDP::new(udp_config, socket, dst_addr)))
+    }
+    fn create_doc_viewer(&self) -> Box<dyn SockDocViewer> {
+        Box::new(UdpDoc)
     }
 }
 
@@ -110,5 +135,9 @@ mod tests {
         } else {
             true
         })
+    }
+    #[test]
+    fn test_doc_params() {
+        println!("{}", SocketFactoryUDP::new().create_doc_viewer().get_full_scheme());
     }
 }

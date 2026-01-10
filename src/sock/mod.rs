@@ -42,6 +42,21 @@ pub trait SockBlockCtl {
     }
 }
 
+pub trait SockDocViewer {
+    fn get_full_scheme(&self) -> String;
+    fn get_examples(&self) -> String;
+}
+
+struct SocDocDefault;
+impl SockDocViewer for SocDocDefault {
+    fn get_full_scheme(&self) -> String {
+        "Documentation view is not implemented".to_string()
+    }
+    fn get_examples(&self) -> String {
+        "Examples not provided".to_string()
+    }
+}
+
 pub trait ComplexSock: SimpleSock + SockBlockCtl + SockInfo {}
 
 // Any type that impl SimpleSock & SockBlockCtl automatically
@@ -60,6 +75,9 @@ pub trait SocketFactory {
         let mut soc = self.create_sock(params)?;
         soc.set_block(is_blocking)?;
         Ok(soc)
+    }
+    fn create_doc_viewer(&self) -> Box<dyn SockDocViewer> {
+        Box::new(SocDocDefault)
     }
 }
 
