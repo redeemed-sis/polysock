@@ -5,6 +5,8 @@ use serde::Deserialize;
 use serde_hex::{SerHex, StrictPfx};
 use std::cell::RefCell;
 use std::io::{Error, ErrorKind};
+use std::path::PathBuf;
+use std::process;
 use std::ptr;
 use std::{any::Any, thread, time::Duration};
 
@@ -38,11 +40,17 @@ pub enum TestGenTypes {
         #[serde(with = "hex::serde")]
         data: Vec<u8>,
     },
+    #[serde(rename = "file")]
+    File { path: PathBuf },
 }
 
+#[derive(Default)]
 pub struct TestGenPrivate {
     pos: usize,
-    last_data: u8,
+    pattern_size: usize,
+    max_iter: Option<u64>,
+    curr_iter: u64,
+    pattern_priv: Option<Box<dyn Any + Send>>,
 }
 
 fn get_curr_size(pattern_size: usize, req_size: usize, pos: usize) -> usize {
@@ -68,19 +76,16 @@ impl TestPatternStrategy for StaticStrategy {
     fn read(
         &self,
         cfg: &(dyn Any + Send),
-        p: &mut TestGenPrivate,
+        _p: &mut Option<Box<dyn Any + Send>>,
         buf: &mut [u8],
-        sz: usize,
+        real_size: usize,
+        _: usize,
     ) -> std::io::Result<usize> {
-        let ret = if let Some(TestGenTypes::Static { data, size }) = cfg.downcast_ref() {
-            // Get needed size
-            let ret = get_curr_size(*size, sz, p.pos);
+        let ret = if let Some(TestGenTypes::Static { data, size: _ }) = cfg.downcast_ref() {
             unsafe {
-                std::ptr::write_bytes(buf.as_mut_ptr(), *data, ret);
+                std::ptr::write_bytes(buf.as_mut_ptr(), *data, real_size);
             }
-            // Update position in private
-            update_pos(p, sz, ret);
-            ret
+            real_size
         } else {
             return Err(Error::from(ErrorKind::InvalidData));
         };
@@ -93,35 +98,35 @@ impl TestPatternStrategy for SequenceStrategy {
     fn read(
         &self,
         cfg: &(dyn Any + Send),
-        p: &mut TestGenPrivate,
+        p: &mut Option<Box<dyn Any + Send>>,
         buf: &mut [u8],
-        sz: usize,
+        real_size: usize,
+        _: usize,
     ) -> std::io::Result<usize> {
-        let ret = if let Some(TestGenTypes::Sequence { size }) = cfg.downcast_ref() {
-            // Get needed size
-            let ret = get_curr_size(*size, sz, p.pos);
-            let mut test_vec = vec![0u8; ret];
+        let ret = if let Some(TestGenTypes::Sequence { size: _ }) = cfg.downcast_ref()
+            && let Some(last_data) = p.as_mut().unwrap().downcast_mut::<u8>()
+        {
+            let mut test_vec = vec![0u8; real_size];
             for (i, el) in test_vec.iter_mut().enumerate() {
-                *el = ((i + p.last_data as usize) & 0xFF) as u8;
+                *el = ((i + *last_data as usize) & 0xFF) as u8;
             }
             // Save the last data
             if !test_vec.is_empty() {
-                p.last_data = ((test_vec[ret - 1] as usize + 1) & 0xFF) as u8;
+                *last_data = ((test_vec[real_size - 1] as usize + 1) & 0xFF) as u8;
             }
             unsafe {
-                std::ptr::copy_nonoverlapping(test_vec.as_ptr(), buf.as_mut_ptr(), ret);
+                std::ptr::copy_nonoverlapping(test_vec.as_ptr(), buf.as_mut_ptr(), real_size);
             }
-            // Update position in private
-            update_pos(p, sz, ret);
-            // If pos is zero, reset also previous data
-            if p.pos == 0 {
-                p.last_data = 0;
-            }
-            ret
+            real_size
         } else {
             return Err(Error::from(ErrorKind::InvalidData));
         };
         Ok(ret)
+    }
+    fn reset_priv(&self, _p: &mut Option<Box<dyn Any + Send>>) {
+        if let Some(last_data) = _p.as_mut().unwrap().downcast_mut::<u8>() {
+            *last_data = 0;
+        }
     }
 }
 
@@ -130,27 +135,28 @@ impl TestPatternStrategy for IncrementStrategy {
     fn read(
         &self,
         cfg: &(dyn Any + Send),
-        p: &mut TestGenPrivate,
+        p: &mut Option<Box<dyn Any + Send>>,
         buf: &mut [u8],
-        sz: usize,
+        real_size: usize,
+        _: usize,
     ) -> std::io::Result<usize> {
         #[allow(unused_variables)]
-        let ret = if let Some(TestGenTypes::Increment { data, size }) = cfg.downcast_ref() {
-            // Get needed size
-            let ret = get_curr_size(*size, sz, p.pos);
+        let ret = if let Some(TestGenTypes::Increment { data, size }) = cfg.downcast_ref()
+            && let Some(last_data) = p.as_ref().unwrap().downcast_ref::<u8>()
+        {
             unsafe {
-                std::ptr::write_bytes(buf.as_mut_ptr(), p.last_data, ret);
+                std::ptr::write_bytes(buf.as_mut_ptr(), *last_data, real_size);
             }
-            // Update position in private
-            update_pos(p, sz, ret);
-            if p.pos == 0 {
-                p.last_data = ((p.last_data as usize + 1) & 0xFF) as u8;
-            }
-            ret
+            real_size
         } else {
             return Err(Error::from(ErrorKind::InvalidData));
         };
         Ok(ret)
+    }
+    fn reset_priv(&self, _p: &mut Option<Box<dyn Any + Send>>) {
+        if let Some(last_data) = _p.as_mut().unwrap().downcast_mut::<u8>() {
+            *last_data = ((*last_data as usize + 1) & 0xFF) as u8;
+        }
     }
 }
 
@@ -159,37 +165,32 @@ impl TestPatternStrategy for BlockStrategy {
     fn read(
         &self,
         cfg: &(dyn Any + Send),
-        p: &mut TestGenPrivate,
-        data: &mut [u8],
-        sz: usize,
+        _: &mut Option<Box<dyn Any + Send>>,
+        buf: &mut [u8],
+        real_size: usize,
+        pos: usize,
     ) -> std::io::Result<usize> {
         let ret = if let Some(TestGenTypes::Blocks { blocks, block_size }) = cfg.downcast_ref() {
             let bs = *block_size;
-            let all_size = blocks.len() * bs;
-            // Get real size, which be applied to client vector
-            let ret = get_curr_size(all_size, sz, p.pos);
             let mut curr = 0usize;
             // Get start block data, according to current pattern position
-            let start = blocks.iter().skip(p.pos / bs);
+            let start = blocks.iter().skip(pos / bs);
             for el in start {
                 // Get remaining block size, according to current
                 // position
-                let chunk = bs - ((p.pos + curr) % bs);
+                let chunk = bs - ((pos + curr) % bs);
                 // Compare remaining block size with max possible size
-                if curr + chunk > ret {
+                if curr + chunk > real_size {
                     unsafe {
-                        ptr::write_bytes(data.as_mut_ptr().wrapping_add(curr), *el, ret - curr)
+                        ptr::write_bytes(buf.as_mut_ptr().wrapping_add(curr), *el, real_size - curr)
                     };
                     break;
                 } else {
-                    unsafe { ptr::write_bytes(data.as_mut_ptr().wrapping_add(curr), *el, chunk) };
+                    unsafe { ptr::write_bytes(buf.as_mut_ptr().wrapping_add(curr), *el, chunk) };
                     curr += chunk;
                 }
             }
-            // Update position, it resets if
-            // ret < requested size
-            update_pos(p, sz, ret);
-            ret
+            real_size
         } else {
             return Err(Error::from(ErrorKind::InvalidData));
         };
@@ -202,20 +203,16 @@ impl TestPatternStrategy for TextStringStrategy {
     fn read(
         &self,
         cfg: &(dyn Any + Send),
-        p: &mut TestGenPrivate,
+        _: &mut Option<Box<dyn Any + Send>>,
         buf: &mut [u8],
-        sz: usize,
+        real_size: usize,
+        pos: usize,
     ) -> std::io::Result<usize> {
         let ret = if let Some(TestGenTypes::TextString { data }) = cfg.downcast_ref() {
-            let pattern_size = data.len();
-            // Get needed size
-            let ret = get_curr_size(pattern_size, sz, p.pos);
             unsafe {
-                ptr::copy_nonoverlapping(data.as_ptr().wrapping_add(p.pos), buf.as_mut_ptr(), ret);
+                ptr::copy_nonoverlapping(data.as_ptr().wrapping_add(pos), buf.as_mut_ptr(), real_size);
             }
-            // Update position in private
-            update_pos(p, sz, ret);
-            ret
+            real_size
         } else {
             return Err(Error::from(ErrorKind::InvalidData));
         };
@@ -228,20 +225,38 @@ impl TestPatternStrategy for HexStringStrategy {
     fn read(
         &self,
         cfg: &(dyn Any + Send),
-        p: &mut TestGenPrivate,
+        _: &mut Option<Box<dyn Any + Send>>,
         buf: &mut [u8],
-        sz: usize,
+        real_size: usize,
+        pos: usize,
     ) -> std::io::Result<usize> {
         let ret = if let Some(TestGenTypes::HexString { data }) = cfg.downcast_ref() {
-            let pattern_size = data.len();
-            // Get needed size
-            let ret = get_curr_size(pattern_size, sz, p.pos);
             unsafe {
-                ptr::copy_nonoverlapping(data.as_ptr().wrapping_add(p.pos), buf.as_mut_ptr(), ret);
+                ptr::copy_nonoverlapping(data.as_ptr().wrapping_add(pos), buf.as_mut_ptr(), real_size);
             }
-            // Update position in private
-            update_pos(p, sz, ret);
-            ret
+            real_size
+        } else {
+            return Err(Error::from(ErrorKind::InvalidData));
+        };
+        Ok(ret)
+    }
+}
+
+struct FileStrategy;
+impl TestPatternStrategy for FileStrategy {
+    fn read(
+            &self,
+            _: &(dyn Any + Send),
+            p: &mut Option<Box<dyn Any + Send>>,
+            buf: &mut [u8],
+            real_size: usize,
+            pos: usize,
+        ) -> std::io::Result<usize> {
+        let ret = if let Some(data) = p.as_ref().unwrap().downcast_ref::<String>() {
+            unsafe {
+                ptr::copy_nonoverlapping(data.as_ptr().wrapping_add(pos), buf.as_mut_ptr(), real_size);
+            }
+            real_size
         } else {
             return Err(Error::from(ErrorKind::InvalidData));
         };
@@ -253,16 +268,19 @@ impl TestPatternStrategy for HexStringStrategy {
 pub struct TestGenConfig {
     pat: TestGenTypes,
     cycle: u64,
+    iter_num: Option<u64>,
 }
 
 pub trait TestPatternStrategy {
     fn read(
         &self,
         cfg: &(dyn Any + Send),
-        p: &mut TestGenPrivate,
-        data: &mut [u8],
-        sz: usize,
+        p: &mut Option<Box<dyn Any + Send>>,
+        buf: &mut [u8],
+        real_size: usize,
+        pos: usize,
     ) -> std::io::Result<usize>;
+    fn reset_priv(&self, _p: &mut Option<Box<dyn Any + Send>>) {}
 }
 
 make_simple_sock!(SimpleTestGen {
@@ -274,12 +292,33 @@ make_simple_sock!(SimpleTestGen {
 
 impl SimpleSock for SimpleTestGen {
     fn read(&self, data: &mut [u8], sz: usize) -> std::io::Result<usize> {
+        let mut p = self.p.borrow_mut();
         // Sleep only if pattern starts
-        if self.p.borrow().pos == 0 {
+        if p.pos == 0 {
             thread::sleep(Duration::from_micros(self.config.cycle));
         }
-        self.reader
-            .read(self.pat_cfg.as_ref(), &mut self.p.borrow_mut(), data, sz)
+        // Get real size, according to pattern size, current position of
+        // pattern producing & requested size
+        let real_size = get_curr_size(p.pattern_size, sz, p.pos);
+        let pos = p.pos;
+        let ret = self.reader
+            .read(self.pat_cfg.as_ref(), &mut p.pattern_priv, data, real_size, pos)?;
+        // Update position of pattern producing
+        update_pos(&mut p, sz, real_size);
+        // End of pattern block
+        if p.pos == 0 {
+            // Check if iteration constrains were configured
+            if let Some(max_iter) = p.max_iter {
+                p.curr_iter += 1;
+                if p.curr_iter >= max_iter + 1 {
+                    println!("Max iteration limit is reached ({max_iter} iterations)");
+                    process::exit(0);
+                }
+            }
+            // Reset private strategy state, if implemented
+            self.reader.reset_priv(&mut p.pattern_priv);
+        }
+        Ok(ret)
     }
     fn write(&self, _: &[u8], _: usize) -> std::io::Result<()> {
         debug!("Socket test-gen unsupports write operation! Skipping...");
@@ -308,26 +347,33 @@ impl SocketFactory for TestGenFactory {
             Error::new(ErrorKind::InvalidInput, "Invalid test-gen configuration")
         })?;
 
-        let mut p = TestGenPrivate {
-            pos: 0,
-            last_data: 0,
-        };
+        let mut p: TestGenPrivate = Default::default();
+        // Get max iterations if exists
+        p.max_iter = testgen_cfg.iter_num;
         let (cb, pat_cfg, p) = match &testgen_cfg.pat {
-            TestGenTypes::Static { data, size } => (
-                Box::new(StaticStrategy) as Box<dyn TestPatternStrategy + Send>,
-                Box::new(TestGenTypes::Static {
-                    data: *data,
-                    size: *size,
-                }),
-                RefCell::new(p),
-            ),
-            TestGenTypes::Sequence { size } => (
-                Box::new(SequenceStrategy) as Box<dyn TestPatternStrategy + Send>,
-                Box::new(TestGenTypes::Sequence { size: *size }),
-                RefCell::new(p),
-            ),
+            TestGenTypes::Static { data, size } => {
+                p.pattern_size = *size;
+                (
+                    Box::new(StaticStrategy) as Box<dyn TestPatternStrategy + Send>,
+                    Box::new(TestGenTypes::Static {
+                        data: *data,
+                        size: *size,
+                    }),
+                    RefCell::new(p),
+                )
+            }
+            TestGenTypes::Sequence { size } => {
+                p.pattern_priv = Some(Box::new(0u8));
+                p.pattern_size = *size;
+                (
+                    Box::new(SequenceStrategy) as Box<dyn TestPatternStrategy + Send>,
+                    Box::new(TestGenTypes::Sequence { size: *size }),
+                    RefCell::new(p),
+                )
+            }
             TestGenTypes::Increment { data, size } => {
-                p.last_data = *data;
+                p.pattern_priv = Some(Box::new(*data));// Reset private strategy state, if implemented
+                p.pattern_size = *size;
                 (
                     Box::new(IncrementStrategy) as Box<dyn TestPatternStrategy + Send>,
                     Box::new(TestGenTypes::Increment {
@@ -337,24 +383,43 @@ impl SocketFactory for TestGenFactory {
                     RefCell::new(p),
                 )
             }
-            TestGenTypes::Blocks { blocks, block_size } => (
-                Box::new(BlockStrategy) as Box<dyn TestPatternStrategy + Send>,
-                Box::new(TestGenTypes::Blocks {
-                    blocks: blocks.clone(),
-                    block_size: *block_size,
-                }),
-                RefCell::new(p),
-            ),
-            TestGenTypes::TextString { data } => (
-                Box::new(TextStringStrategy) as Box<dyn TestPatternStrategy + Send>,
-                Box::new(TestGenTypes::TextString { data: data.clone() }),
-                RefCell::new(p),
-            ),
-            TestGenTypes::HexString { data } => (
-                Box::new(HexStringStrategy) as Box<dyn TestPatternStrategy + Send>,
-                Box::new(TestGenTypes::HexString { data: data.clone() }),
-                RefCell::new(p),
-            ),
+            TestGenTypes::Blocks { blocks, block_size } => {
+                p.pattern_size = block_size * blocks.len();
+                (
+                    Box::new(BlockStrategy) as Box<dyn TestPatternStrategy + Send>,
+                    Box::new(TestGenTypes::Blocks {
+                        blocks: blocks.clone(),
+                        block_size: *block_size,
+                    }),
+                    RefCell::new(p),
+                )
+            },
+            TestGenTypes::TextString { data } => {
+                p.pattern_size = data.len();
+                (
+                    Box::new(TextStringStrategy) as Box<dyn TestPatternStrategy + Send>,
+                    Box::new(TestGenTypes::TextString { data: data.clone() }),
+                    RefCell::new(p),
+                )
+            }
+            TestGenTypes::HexString { data } => {
+                p.pattern_size = data.len();
+                (
+                    Box::new(HexStringStrategy) as Box<dyn TestPatternStrategy + Send>,
+                    Box::new(TestGenTypes::HexString { data: data.clone() }),
+                    RefCell::new(p),
+                )
+            }
+            TestGenTypes::File { path } => {
+                let data = std::fs::read_to_string(path)?;
+                p.pattern_size = data.len();
+                p.pattern_priv = Some(Box::new(data));
+                (
+                    Box::new(FileStrategy) as Box<dyn TestPatternStrategy + Send>,
+                    Box::new(TestGenTypes::File { path: path.clone() }),
+                    RefCell::new(p),
+                )
+            }
         };
 
         Ok(Box::new(SimpleTestGen::new(testgen_cfg, pat_cfg, p, cb)))
