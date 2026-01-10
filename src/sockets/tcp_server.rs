@@ -22,7 +22,6 @@ use std::time::Duration;
 pub struct TcpServerConfig {
     #[serde(default = "serde_helpers::default_ip_local")]
     ip_local: IpAddr,
-    #[serde(deserialize_with = "serde_helpers::string_to_u16")]
     port_local: u16,
 }
 
@@ -153,14 +152,10 @@ impl TcpServerFactory {
 
 impl SocketFactory for TcpServerFactory {
     fn create_sock(&self, params: SocketParams) -> io::Result<Box<dyn ComplexSock>> {
-        // Convert params to JSON value
-        let json_value = serde_json::to_value(params)
-            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid parameters"))?;
-
-        // Deserialize to TcpClientConfig
-        let tcp_config: TcpServerConfig = serde_json::from_value(json_value).map_err(|e| {
+        // Deserialize to TcpServerConfig
+        let tcp_config: TcpServerConfig = serde_json::from_str(params.as_str()).map_err(|e| {
             eprintln!("{e}");
-            Error::new(ErrorKind::InvalidInput, "Invalid UDP configuration")
+            Error::new(ErrorKind::InvalidInput, "Invalid TCP configuration")
         })?;
 
         // Blocking by default

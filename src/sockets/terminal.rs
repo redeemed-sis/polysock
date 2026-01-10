@@ -1,4 +1,4 @@
-use crate::sock::{SimpleSock, ComplexSock, SockBlockCtl, SocketFactory, make_simple_sock};
+use crate::sock::{ComplexSock, SimpleSock, SockBlockCtl, SocketFactory, SocketParams, make_simple_sock};
 use std::io::{self, ErrorKind, Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -125,7 +125,7 @@ impl SimpleTerminalFactory {
 }
 
 impl SocketFactory for SimpleTerminalFactory {
-    fn create_sock(&self, _: std::collections::HashMap<String, String>) -> io::Result<Box<dyn ComplexSock>> {
+    fn create_sock(&self, _: SocketParams) -> io::Result<Box<dyn ComplexSock>> {
         Ok(Box::new(SimpleTerminal::default()))
     }
 }
@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn stdout_test() {
         let factory = SimpleTerminalFactory::new();
-        let sock = SocketWrapper::new(factory.create_sock(HashMap::new()).unwrap());
+        let sock = SocketWrapper::new(factory.create_sock(String::new()).unwrap());
         let data: Vec<u8> = sock.read_all().unwrap();
         assert!(sock.generic_write(data.as_ref(), data.len()).is_ok());
     }

@@ -12,7 +12,6 @@ pub struct TcpClientConfig {
     ip_dst: IpAddr,
     #[serde(
         default = "serde_helpers::default_port",
-        deserialize_with = "serde_helpers::string_to_u16"
     )]
     port_dst: u16,
 }
@@ -81,14 +80,10 @@ impl TcpClientFactory {
 
 impl SocketFactory for TcpClientFactory {
     fn create_sock(&self, params: SocketParams) -> std::io::Result<Box<dyn ComplexSock>> {
-        // Convert params to JSON value
-        let json_value = serde_json::to_value(params)
-            .map_err(|_| Error::new(ErrorKind::InvalidInput, "Invalid parameters"))?;
-
         // Deserialize to TcpClientConfig
-        let tcp_config: TcpClientConfig = serde_json::from_value(json_value).map_err(|e| {
+        let tcp_config: TcpClientConfig = serde_json::from_str(params.as_str()).map_err(|e| {
             eprintln!("{e}");
-            Error::new(ErrorKind::InvalidInput, "Invalid UDP configuration")
+            Error::new(ErrorKind::InvalidInput, "Invalid TCP configuration")
         })?;
 
         // Blocking by default

@@ -9,7 +9,7 @@ use crate::sock::{
 };
 use crate::sockets::{
     tcp_client::TcpClientFactory, tcp_server::TcpServerFactory, terminal::SimpleTerminalFactory,
-    udp::SocketFactoryUDP,
+    udp::SocketFactoryUDP, testgen::TestGenFactory,
 };
 
 use clap::builder::PossibleValuesParser;
@@ -23,13 +23,6 @@ use std::sync::LazyLock;
 enum ExchangeMode {
     Unidir,
     Bidir,
-}
-
-fn parse_json<T>(s: &str) -> Result<T, String>
-where
-    T: serde::de::DeserializeOwned,
-{
-    serde_json::from_str(s).map_err(|e| e.to_string())
 }
 
 #[derive(clap::Args, Clone)]
@@ -47,10 +40,10 @@ struct OnelinerArgs {
     #[arg(short, long, value_parser = PossibleValuesParser::new(FACTORY_MAP.keys()))]
     to_dev: String,
     /// The first socket parameters (JSON format)
-    #[arg(long, value_parser = parse_json::<SocketParams>)]
+    #[arg(long)]
     from_params: Option<SocketParams>,
     /// The second socket parameters (JSON format)
-    #[arg(long, value_parser = parse_json::<SocketParams>)]
+    #[arg(long)]
     to_params: Option<SocketParams>,
     /// Socket info tracing
     #[arg(long, default_value_t = false)]
@@ -106,6 +99,7 @@ static FACTORY_MAP: LazyLock<HashMap<&'static str, FactoryCallback>> = LazyLock:
         factory_callback_create!(TcpClientFactory::new()),
     );
     m.insert("tcp-server", factory_callback_create!(TcpServerFactory::new()));
+    m.insert("test-gen", factory_callback_create!(TestGenFactory::new()));
     m
 });
 
