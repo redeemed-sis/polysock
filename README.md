@@ -85,3 +85,39 @@ polysock oneliner -f tcp-server --from-params '{ "port_local": 5150 }' \
 # 0000:   48 65 6c 6c  6f 20 77 6f  72 6c 64 0a                Hello world.
 # Hello world
 ```
+## Socket parameters info helpers
+```sh
+# Print info about tcp-client socket parameters
+polysock info -t tcp-client
+
+# Output:
+#
+# This is information about socket parameters, which passed to --to-params & --from-params:
+# JSON schema of parameter structure:
+# {
+#   "$schema": "https://json-schema.org/draft/2020-12/schema",
+#   "title": "TcpClientConfig",
+#   "description": "Configuration for TCP client.",
+#   "type": "object",
+#   "properties": {
+#     "ip_dst": {
+#       "description": "Destination host IP address to connect",
+#       "type": "string",
+#       "format": "ip"
+#     },
+#     "port_dst": {
+#       "description": "Destination port of host TCP server to connect",
+#       "type": "integer",
+#       "format": "uint16",
+#       "default": 0,
+#       "maximum": 65535,
+#       "minimum": 0
+#     }
+#   },
+#   "required": [
+#     "ip_dst"
+#   ]
+# }
+# Examples:
+# Server configuration with IP constrain: { "ip_dst": "127.0.0.1", "port_dst": 1234 }
+```
