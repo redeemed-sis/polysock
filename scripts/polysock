@@ -24,6 +24,7 @@ _polysock() {
                                             -f --from-dev -t --to-dev --from-params \
                                             --to-params --trace-info --trace-raw --trace-canon \
                                             --trace-from-off --trace-to-off -h --help" -- "$cur") ) ;;
+            info) COMPREPLY=( $(compgen -W "-t --ty --no-schema --no-examples -h --help" -- "$cur") ) ;;
         esac
     fi
 }

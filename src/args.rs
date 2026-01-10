@@ -9,7 +9,7 @@ use crate::sock::{
 };
 use crate::sockets::{
     tcp_client::TcpClientFactory, tcp_server::TcpServerFactory, terminal::SimpleTerminalFactory,
-    udp::SocketFactoryUDP, testgen::TestGenFactory,
+    testgen::TestGenFactory, udp::SocketFactoryUDP,
 };
 
 use clap::builder::PossibleValuesParser;
@@ -62,10 +62,25 @@ struct OnelinerArgs {
     trace_to_off: bool,
 }
 
+#[derive(clap::Args)]
+struct InfoArgs {
+    /// Socket type to print information
+    #[arg(short, long, value_parser = PossibleValuesParser::new(FACTORY_MAP.keys()))]
+    ty: String,
+    /// Without JSON schema
+    #[arg(long, default_value_t = false)]
+    no_schema: bool,
+    /// Without examples
+    #[arg(long, default_value_t = false)]
+    no_examples: bool,
+}
+
 #[derive(Subcommand)]
 enum Commands {
     /// Oneliner mode (command line prameters management)
     Oneliner(OnelinerArgs),
+    /// Print configuration parameter's structures for sockets information
+    Info(InfoArgs),
     /// Not implemented yet
     Script {},
     /// Not implemented yet
@@ -98,7 +113,10 @@ static FACTORY_MAP: LazyLock<HashMap<&'static str, FactoryCallback>> = LazyLock:
         "tcp-client",
         factory_callback_create!(TcpClientFactory::new()),
     );
-    m.insert("tcp-server", factory_callback_create!(TcpServerFactory::new()));
+    m.insert(
+        "tcp-server",
+        factory_callback_create!(TcpServerFactory::new()),
+    );
     m.insert("test-gen", factory_callback_create!(TestGenFactory::new()));
     m
 });
@@ -111,6 +129,10 @@ impl PolySockArgs {
             process::exit(1)
         }) {
             Commands::Oneliner(args) => Self::get_oneliner_command(args),
+            Commands::Info(args) => {
+                Self::print_info(args);
+                process::exit(0);
+            }
             Commands::Repl {} => {
                 panic!("Repl mode is not implemented yet!");
             }
@@ -123,6 +145,20 @@ impl PolySockArgs {
             eprintln!("Command parsing failed!");
             process::exit(1)
         })
+    }
+    fn print_info(args: &InfoArgs) {
+        let viewer = FACTORY_MAP.get(args.ty.as_str()).unwrap()().create_doc_viewer();
+        println!(
+            "This is information about socket parameters, which passed to --to-params & --from-params:"
+        );
+        if !args.no_schema {
+            println!("JSON schema of parameter structure:");
+            println!("{}", viewer.get_full_scheme());
+        }
+        if !args.no_examples {
+            println!("Examples:");
+            println!("{}", viewer.get_examples());
+        }
     }
     fn get_oneliner_command(args: &OnelinerArgs) -> Option<Box<dyn Command>> {
         let set_decorators =

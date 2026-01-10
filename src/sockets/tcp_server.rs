@@ -1,6 +1,8 @@
 use crate::serde_helpers;
 use crate::sock::make_simple_sock;
-use crate::sock::{ComplexSock, SimpleSock, SockBlockCtl, SocketFactory, SocketParams};
+use crate::sock::{
+    ComplexSock, SimpleSock, SockBlockCtl, SockDocViewer, SocketFactory, SocketParams,
+};
 use pretty_hex::PrettyHex;
 use serde::Deserialize;
 use std::collections::LinkedList;
@@ -18,10 +20,12 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 /// Configuration for TCP server.
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct TcpServerConfig {
+    /// Local IP address constrain of TCP server
     #[serde(default = "serde_helpers::default_ip_local")]
     ip_local: IpAddr,
+    /// Local port of TCP server
     port_local: u16,
 }
 
@@ -142,6 +146,23 @@ impl SockBlockCtl for TcpServer {
     }
 }
 
+struct TcpServerDoc;
+impl SockDocViewer for TcpServerDoc {
+    fn get_full_scheme(&self) -> String {
+        let schema = schemars::schema_for!(TcpServerConfig);
+        serde_json::to_string_pretty(&schema).unwrap()
+    }
+    fn get_examples(&self) -> String {
+        let example_ip = "{ \"ip_local\": \"127.0.0.1\", \"port_local\": 1234 }";
+        let example_no_ip = "{ \"port_local\": 1234 }";
+        format!(
+            "{}: {}\n{}: {}",
+            "Server configuration with IP constrain", example_ip,
+            "Server configuration without IP constrain", example_no_ip,
+        )
+    }
+}
+
 pub struct TcpServerFactory;
 
 impl TcpServerFactory {
@@ -166,5 +187,8 @@ impl SocketFactory for TcpServerFactory {
             Arc::new(AtomicBool::new(true)),
             None,
         )))
+    }
+    fn create_doc_viewer(&self) -> Box<dyn crate::sock::SockDocViewer> {
+        Box::new(TcpServerDoc)
     }
 }

@@ -1,4 +1,4 @@
-use crate::sock::{ComplexSock, SimpleSock, SockBlockCtl, SocketFactory, make_simple_sock};
+use crate::sock::{ComplexSock, SimpleSock, SockBlockCtl, SocketFactory, make_simple_sock, SockDocViewer};
 use hex;
 use log::debug;
 use serde::Deserialize;
@@ -10,38 +10,75 @@ use std::process;
 use std::ptr;
 use std::{any::Any, thread, time::Duration};
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, schemars::JsonSchema)]
 #[serde(tag = "type")]
 pub enum TestGenTypes {
+    /// Constant data production
     #[serde(rename = "static")]
     Static {
+        /// Value in hex format
         #[serde(with = "SerHex::<StrictPfx>")]
+        #[schemars(with = "String")]
         data: u8,
+        /// Length of one iteration pattern
         size: usize,
     },
+    /// Sequence from 0..255
     #[serde(rename = "seq")]
-    Sequence { size: usize },
+    Sequence {
+        /// Length of one iteration pattern
+        size: usize
+    },
+    /// Incremental pattern (every next iteration value is one by one higher)
     #[serde(rename = "inc")]
     Increment {
+        /// Initial value in hex
         #[serde(with = "SerHex::<StrictPfx>")]
+        #[schemars(with = "String")]
         data: u8,
+        /// Length of one iteration pattern
         size: usize,
     },
+    /// Data blocks pattren
     #[serde(rename = "blocks")]
     Blocks {
+        /// Data blocks in hex string format ("00fdea" is 3 blocks pattern)
         #[serde(with = "hex::serde")]
+        #[schemars(with = "String")]
         blocks: Vec<u8>,
+        /// Length of one block
         block_size: usize,
     },
+    /// Text string pattren
     #[serde(rename = "text_str")]
-    TextString { data: String },
+    TextString {
+        /// String for production in text format
+        data: String
+    },
+    /// Hex string pattren
     #[serde(rename = "hex_str")]
     HexString {
+        /// Hex string data (for example "55ff67aaaa")
         #[serde(with = "hex::serde")]
+        #[schemars(with = "String")]
         data: Vec<u8>,
     },
+    /// Data from file pattern
     #[serde(rename = "file")]
-    File { path: PathBuf },
+    File {
+        /// Path to file with test pattern
+        path: PathBuf
+    },
+}
+
+#[derive(Deserialize, Debug, schemars::JsonSchema)]
+pub struct TestGenConfig {
+    /// Test pattern type selection
+    pat: TestGenTypes,
+    /// Data prosuction cycle in microseconds
+    cycle: u64,
+    /// Iteration number constrain (optional)
+    iter_num: Option<u64>,
 }
 
 #[derive(Default)]
@@ -264,13 +301,6 @@ impl TestPatternStrategy for FileStrategy {
     }
 }
 
-#[derive(Deserialize, Debug)]
-pub struct TestGenConfig {
-    pat: TestGenTypes,
-    cycle: u64,
-    iter_num: Option<u64>,
-}
-
 pub trait TestPatternStrategy {
     fn read(
         &self,
@@ -310,7 +340,7 @@ impl SimpleSock for SimpleTestGen {
             // Check if iteration constrains were configured
             if let Some(max_iter) = p.max_iter {
                 p.curr_iter += 1;
-                if p.curr_iter >= max_iter + 1 {
+                if p.curr_iter > max_iter {
                     println!("Max iteration limit is reached ({max_iter} iterations)");
                     process::exit(0);
                 }
@@ -327,6 +357,23 @@ impl SimpleSock for SimpleTestGen {
 }
 
 impl SockBlockCtl for SimpleTestGen {}
+
+struct TestGenDoc;
+impl SockDocViewer for TestGenDoc {
+    fn get_full_scheme(&self) -> String {
+        let schema = schemars::schema_for!(TestGenConfig);
+        serde_json::to_string_pretty(&schema).unwrap()
+    }
+    fn get_examples(&self) -> String {
+        let inc_cfg = "{ \"pat\": { \"type\": \"inc\", \"data\": \"0xf0\", \"size\": 100 }, \"cycle\": 10000 }";
+        let hex_str_cfg = "{ \"pat\": { \"type\": \"hex_str\", \"data\": \"1122334455aaddff\" }, \"cycle\": 10000, \"iter_num\": 10 }";
+        format!(
+            "{}: {}\n{}: {}",
+            "Incremantal traffic generation", inc_cfg,
+            "Hex string traffic generation (only 10 iterations)", hex_str_cfg
+        )
+    }
+}
 
 pub struct TestGenFactory;
 
@@ -347,9 +394,7 @@ impl SocketFactory for TestGenFactory {
             Error::new(ErrorKind::InvalidInput, "Invalid test-gen configuration")
         })?;
 
-        let mut p: TestGenPrivate = Default::default();
-        // Get max iterations if exists
-        p.max_iter = testgen_cfg.iter_num;
+        let mut p: TestGenPrivate = TestGenPrivate { max_iter: testgen_cfg.iter_num, ..Default::default() };
         let (cb, pat_cfg, p) = match &testgen_cfg.pat {
             TestGenTypes::Static { data, size } => {
                 p.pattern_size = *size;
@@ -424,18 +469,25 @@ impl SocketFactory for TestGenFactory {
 
         Ok(Box::new(SimpleTestGen::new(testgen_cfg, pat_cfg, p, cb)))
     }
+    fn create_doc_viewer(&self) -> Box<dyn SockDocViewer> {
+        Box::new(TestGenDoc)
+    }
 }
 
 mod tests {
     #![allow(unused_imports)]
 
-    use crate::sockets::testgen::TestGenConfig;
+    use crate::{sock::SocketFactory, sockets::testgen::{TestGenConfig, TestGenFactory}};
 
     #[test]
     fn parse_config() {
         let cfg =
-            "{ \"pat\": { \"type\": \"static\", \"data\": 100, \"size\": 10 }, \"cycle\": 1000 }";
+            "{ \"pat\": { \"type\": \"static\", \"data\": \"0xf0\", \"size\": 10 }, \"cycle\": 1000 }";
         let cfg: TestGenConfig = serde_json::from_str(cfg).unwrap();
         println!("{:?}", cfg);
+    }
+    #[test]
+    fn test_doc_params() {
+        println!("{}", TestGenFactory::new().create_doc_viewer().get_full_scheme());
     }
 }

@@ -1,18 +1,20 @@
 use crate::serde_helpers;
 use crate::sock::make_simple_sock;
-use crate::sock::{ComplexSock, SimpleSock, SockBlockCtl, SocketFactory, SocketParams};
+use crate::sock::{ComplexSock, SimpleSock, SockBlockCtl, SocketFactory, SocketParams, SockDocViewer};
 use serde::Deserialize;
 use std::cell::RefCell;
 use std::io::{Error, ErrorKind, Read, Write};
 use std::net::{IpAddr, Shutdown, TcpStream};
 
 /// Configuration for TCP client.
-#[derive(Deserialize)]
+#[derive(Deserialize, schemars::JsonSchema)]
 pub struct TcpClientConfig {
+    /// Destination host IP address to connect
     ip_dst: IpAddr,
     #[serde(
         default = "serde_helpers::default_port",
     )]
+    /// Destination port of host TCP server to connect
     port_dst: u16,
 }
 
@@ -70,6 +72,21 @@ impl SockBlockCtl for SimpleTcpClient {
     }
 }
 
+struct TcpClientDoc;
+impl SockDocViewer for TcpClientDoc {
+    fn get_full_scheme(&self) -> String {
+        let schema = schemars::schema_for!(TcpClientConfig);
+        serde_json::to_string_pretty(&schema).unwrap()
+    }
+    fn get_examples(&self) -> String {
+        let example = "{ \"ip_dst\": \"127.0.0.1\", \"port_dst\": 1234 }";
+        format!(
+            "{}: {}",
+            "Server configuration with IP constrain", example,
+        )
+    }
+}
+
 pub struct TcpClientFactory;
 
 impl TcpClientFactory {
@@ -92,5 +109,8 @@ impl SocketFactory for TcpClientFactory {
             RefCell::new(None),
             true,
         )))
+    }
+    fn create_doc_viewer(&self) -> Box<dyn SockDocViewer> {
+        Box::new(TcpClientDoc)
     }
 }
