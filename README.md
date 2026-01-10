@@ -1,5 +1,5 @@
 # General information
-`polysock` is a command-line utility for socket management. It serves as an alternative to `socat`, written on rust. This time `polysock` supports ***udp***, ***stdio***, ***tcp-client***, ***tcp-server*** types of sockets. This utility is supported on Linux (Arch, Ubuntu), Windows and macOs.
+`polysock` is a command-line utility for socket management. It serves as an alternative to `socat`, written on rust. This time `polysock` supports ***udp***, ***stdio***, ***tcp-client***, ***tcp-server***, ***test-gen*** types of sockets. This utility is supported on Linux (Arch, Ubuntu), Windows and macOs.
 # Building and installation
 It is possible to build it for `ubuntu` and `arch-linux`:
 ```sh
@@ -19,29 +19,40 @@ Here are a few common examples of how to use `polysock`:
 - UDP examples
 ```sh
 # Bind STDIO to UDP socket
-polysock oneliner -f stdio -t udp --to-params '{ "port_dst": "5150", "ip_dst": "127.0.0.1" }'
+polysock oneliner -f stdio -t udp --to-params '{ "port_dst": 5150, "ip_dst": "127.0.0.1" }'
 
 # Bind two UDP sockets in bidirectional mode
 polysock oneliner -e bidir \ 
-    -f udp --from-params  '{ "port_local": "5150" }' \
-    -t udp --to-params '{ "port_dst": "5151", "ip_dst":"127.0.0.1" }'
+    -f udp --from-params  '{ "port_local": 5150 }' \
+    -t udp --to-params '{ "port_dst": 5151, "ip_dst":"127.0.0.1" }'
 ```
 - TCP examples
 ```sh
 # Bind STDIO to TCP connection
 polysock oneliner -f stdio \
-    -t tcp-client --to-params '{ "port_dst": "5150", "ip_dst": "127.0.0.1" }'
+    -t tcp-client --to-params '{ "port_dst": 5150, "ip_dst": "127.0.0.1" }'
 
 # Bind UDP socket to all connection on TCP server. Messages 
 # received on udp will be redirected to TCP clients
-polysock oneliner -f udp --from-params '{ "port_local": "5150" }' \
+polysock oneliner -f udp --from-params '{ "port_local": 5150 }' \
     -t tcp-server --to-params '{ "port_local": "1234" }'
+```
+- Generate test traffic examples
+```sh
+# Generate incremental test traffic every 5 ms for UDP
+polysock oneliner -f test-gen --from-params \
+    '{ "pat": { "type": "inc", "size": 200, "data": "0x80" }, "cycle": 5000}' \
+    -t udp --to-params '{ "ip_dst": "127.0.0.1", "port_dst": 1234 }'
+# Generate 5 hex string test messages with 500 ms cycle for UDP
+polysock oneliner -f test-gen --from-params \
+    '{ "pat": { "type": "inc", "size": 200, "data": "0x80" }, "cycle": 500000, "iter_num": 5 }' \
+    -t udp --to-params '{ "ip_dst": "127.0.0.1", "port_dst": 1234 }'
 ```
 ## Tracing decorators
 ```sh
 # Trace every message on "from" and "to" sockets by
 # printing socket information
-polysock oneliner -f tcp-server --from-params '{ "port_local": "5150" }' \
+polysock oneliner -f tcp-server --from-params '{ "port_local": 5150 }' \
     -t stdio --trace-info
 
 # Output:
@@ -60,7 +71,7 @@ polysock oneliner -f tcp-server --from-params '{ "port_local": "5150" }' \
 # Trace every message on "from" socket by
 # printing socket information and data in
 # raw and canonical format
-polysock oneliner -f tcp-server --from-params '{ "port_local": "5150" }' \
+polysock oneliner -f tcp-server --from-params '{ "port_local": 5150 }' \
     -t stdio --trace-info --trace-raw --trace-canon --trace-to-off
 
 # Output:
