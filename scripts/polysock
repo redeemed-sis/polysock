@@ -16,7 +16,7 @@ _polysock() {
 
     if [[ "$i" -eq "$COMP_CWORD" ]]; then
         # If we haven't found a subcommand yet, suggest them
-        COMPREPLY=( $(compgen -W "oneliner script repl help -h --help" -- "$cur") )
+        COMPREPLY=( $(compgen -W "oneliner info script repl help -h --help" -- "$cur") )
     else
         # Suggest based on the found subcommand
         case "$cmd" in
